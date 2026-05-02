@@ -30,10 +30,11 @@ Requires **Python 3.10+** (3.11+ recommended).
 git clone https://github.com/foldedarrow/recce.git
 cd recce
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install .
 ```
 
-Run from anywhere afterwards as `recce`.
+Run from anywhere afterwards as `recce`. To pick up new code changes
+(e.g. after `git pull`), rerun `pip install .` inside the venv.
 
 ### Optional: API keys
 

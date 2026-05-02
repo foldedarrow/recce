@@ -136,26 +136,47 @@ async def _numverify(e164: str, client: HttpClient, settings: Settings) -> Hit:
     )
 
 
-async def _messaging_pivots(e164: str) -> Hit:
-    """Suggest where this number could be checked manually (we won't probe these
-    automatically — most messaging apps' lookups require an authenticated client
-    and probing them violates ToS / can leak intent to the target).
+def _pivot_hits(e164: str, intl: str, national: str) -> list[Hit]:
+    """Suggest where to check this number manually. We don't probe these
+    automatically — most messaging apps' lookups require an authenticated
+    client, and probing them can leak intent to the target.
     """
+    from urllib.parse import quote
     bare = e164.lstrip("+")
-    suggestions = [
-        f"WhatsApp:  https://wa.me/{bare}  (opens chat — visiting will *not* notify the number)",
-        f"Telegram:  search @username or use a contact-import client",
-        f"Signal:    requires the number be in your contacts; no public lookup",
-        f"Truecaller: https://www.truecaller.com/search/{e164.replace('+', '')}  (manual; rate-limited)",
+    google_q = quote(f'"{intl}" OR "{national}"')
+    return [
+        Hit(
+            source="WhatsApp",
+            category="pivot",
+            status=Status.FOUND,
+            url=f"https://wa.me/{bare}",
+            summary="opens a chat — visiting alone does NOT notify the number",
+            confidence=0.4,
+        ),
+        Hit(
+            source="Google web",
+            category="pivot",
+            status=Status.FOUND,
+            url=f"https://www.google.com/search?q={google_q}",
+            summary="search the web for either format of the number (often surfaces forum posts / classified ads)",
+            confidence=0.5,
+        ),
+        Hit(
+            source="Truecaller",
+            category="pivot",
+            status=Status.FOUND,
+            url=f"https://www.truecaller.com/search/{e164.replace('+', '')}",
+            summary="manual reverse-lookup — rate-limited; needs login for full data",
+            confidence=0.3,
+        ),
+        Hit(
+            source="Telegram / Signal",
+            category="pivot",
+            status=Status.FOUND,
+            summary="no public lookup by phone — must import as a contact in your own app",
+            confidence=0.2,
+        ),
     ]
-    return Hit(
-        source="Manual pivots",
-        category="pivot",
-        status=Status.FOUND,
-        summary="messaging apps don't allow programmatic lookup — try these manually",
-        extra={"suggestions": suggestions},
-        confidence=0.3,
-    )
 
 
 async def search_phone(
@@ -182,9 +203,13 @@ async def search_phone(
         )
         return report
 
+    intl = parsed_hit.extra.get("international", e164)
+    national = parsed_hit.extra.get("national", e164)
+    for h in _pivot_hits(e164, intl, national):
+        report.add(h)
+
     rest = await asyncio.gather(
         _numverify(e164, client, settings),
-        _messaging_pivots(e164),
     )
     for h in rest:
         report.add(h)
