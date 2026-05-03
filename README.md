@@ -61,6 +61,8 @@ $EDITOR .env
 
 ## Usage
 
+> **Quick reference:** see [`USAGE.md`](USAGE.md) for a one-page command cheat sheet covering every command, every flag, and typical workflows.
+
 ### Username
 
 ```bash
