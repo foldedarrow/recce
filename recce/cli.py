@@ -14,6 +14,7 @@ from .config import Settings
 from .core.http import http_client
 from .core.output import banner, console, export_json, render_report, render_summary_panel
 from .modules.email import search_email
+from .modules.email_deep import deep_email_probes
 from .modules.phone import search_phone
 from .modules.username import search_username
 
@@ -106,11 +107,19 @@ def cmd_username(
 @app.command("email", help="Look up an email: Gravatar, MX, breaches, reputation, profile pivots.")
 def cmd_email(
     email: str = typer.Argument(..., help="Email address, e.g. 'name@example.com'."),
+    deep: bool = typer.Option(
+        False, "--deep", "-d",
+        help="Probe ~140 sites' signup/reset endpoints to discover registered accounts. "
+             "Slower (~30-60s) and only safe to use on emails you own.",
+    ),
     show_misses: bool = typer.Option(False, "--show-misses"),
     json_out: Optional[Path] = typer.Option(None, "--json"),
 ) -> None:
     settings = Settings.load()
-    banner("recce › email", subtitle=f"target: {email}")
+    banner(
+        "recce › email",
+        subtitle=f"target: {email}" + ("   [yellow]· deep mode ON[/]" if deep else ""),
+    )
     _print_key_status(settings, ["hibp_api_key", "emailrep_api_key", "hunter_api_key"])
 
     async def run():
@@ -119,7 +128,11 @@ def cmd_email(
             timeout=settings.timeout,
             max_concurrency=settings.max_concurrency,
         ) as client:
-            return await search_email(email, client, settings)
+            report = await search_email(email, client, settings)
+        if deep:
+            for hit in await deep_email_probes(email, timeout=settings.timeout):
+                report.add(hit)
+        return report
 
     try:
         report = asyncio.run(run())
