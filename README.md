@@ -13,11 +13,12 @@ It works without API keys, and unlocks more sources when you provide them.
 
 ## Features
 
-- **Username search** across **80+ curated platforms** — GitHub, Reddit, Bluesky, Mastodon, TikTok, YouTube, Twitch, Steam, Lichess, MyAnimeList, Letterboxd, Substack, Patreon, OpenSea, and many more — all checked **in parallel**.
-- **Email lookups** — Gravatar (with profile + linked accounts), DNS/MX provider detection, [EmailRep](https://emailrep.io) reputation & associated profiles, [Have I Been Pwned](https://haveibeenpwned.com) breach history, [Hunter.io](https://hunter.io) verification.
-- **Phone number lookups** — full parse via Google's `libphonenumber` (region, type, carrier, timezone), optional [NumVerify](https://numverify.com) carrier verification, and manual-pivot suggestions for messaging apps.
-- **Terminal-first output** powered by Rich — categorised tables, hit summary, progress bar, optional JSON export.
-- Concurrent, retrying HTTP/2 client; sensible browser User-Agent; configurable concurrency.
+- **Username search** across **720+ platforms** — backed by the canonical [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) database (~700 sites) merged with a hand-curated list of bespoke probes for places WMN doesn't cover (multi-instance Mastodon, Bluesky AT-Proto, redirect-marker detection for Bandcamp/Substack/Wordpress). Refresh with `recce update`. Adult sites are gated behind `--nsfw`.
+- **Email lookups** — Gravatar (with profile + linked accounts), DNS/MX provider detection, [EmailRep](https://emailrep.io) reputation & associated profiles, [Have I Been Pwned](https://haveibeenpwned.com) breach history, [Hunter.io](https://hunter.io) verification, plus a `--deep` mode that probes ~140 sites' signup/reset endpoints (via [holehe](https://github.com/megadose/holehe)) to discover registered accounts, with a 15s retry pass for rate-limited probes.
+- **Phone number lookups** — full parse via Google's `libphonenumber` (region, type, carrier, timezone), optional [NumVerify](https://numverify.com) carrier verification, and manual-pivot rows with clickable URLs (WhatsApp, Google web search, Truecaller, Sync.me).
+- **Batch mode** — pass `--file targets.txt` to any subcommand to run a list of identifiers in one go.
+- **Output** — Rich terminal tables, optional `--json` export, `--csv` export of all hits across all targets, `--show-misses` and `--show-errors` flags.
+- **Network** — concurrent retrying HTTP/2 client, browser User-Agent, configurable concurrency, optional `--proxy` (HTTP/HTTPS/SOCKS).
 - Works **fully offline-of-keys** — every paid source degrades gracefully to `skipped`.
 
 ---

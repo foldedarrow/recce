@@ -151,3 +151,30 @@ def export_json(report: Report, path: Path) -> None:
     payload = report.model_dump(mode="json")
     path.write_text(json.dumps(payload, indent=2, default=str))
     console.print(f"[dim]Saved JSON →[/] [cyan]{path}[/]")
+
+
+def export_csv(reports: list[Report], path: Path) -> None:
+    """Append-friendly CSV. One row per Hit. Multiple reports concatenate."""
+    import csv as _csv
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as fh:
+        writer = _csv.writer(fh)
+        writer.writerow([
+            "query", "query_type", "source", "category", "status",
+            "url", "summary", "confidence", "elapsed_ms", "error",
+        ])
+        for report in reports:
+            for h in report.hits:
+                writer.writerow([
+                    report.query,
+                    report.query_type,
+                    h.source,
+                    h.category,
+                    h.status.value,
+                    h.url or "",
+                    h.summary or "",
+                    f"{h.confidence:.2f}",
+                    h.elapsed_ms if h.elapsed_ms is not None else "",
+                    h.error or "",
+                ])
+    console.print(f"[dim]Saved CSV →[/] [cyan]{path}[/]")

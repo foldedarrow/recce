@@ -21,10 +21,11 @@ class HttpClient:
         timeout: float = 12.0,
         max_concurrency: int = 30,
         retries: int = 1,
+        proxy: str | None = None,
     ) -> None:
         self._sem = asyncio.Semaphore(max_concurrency)
         self._retries = retries
-        self._client = httpx.AsyncClient(
+        client_kwargs: dict[str, Any] = dict(
             timeout=httpx.Timeout(timeout, connect=min(timeout, 6.0)),
             headers={
                 "User-Agent": user_agent,
@@ -38,6 +39,11 @@ class HttpClient:
                 max_keepalive_connections=max_concurrency,
             ),
         )
+        if proxy:
+            # httpx accepts http/https/socks5 URLs here. SOCKS support
+            # requires the optional `httpx[socks]` install.
+            client_kwargs["proxy"] = proxy
+        self._client = httpx.AsyncClient(**client_kwargs)
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -92,8 +98,14 @@ async def http_client(
     user_agent: str,
     timeout: float = 12.0,
     max_concurrency: int = 30,
+    proxy: str | None = None,
 ) -> AsyncIterator[HttpClient]:
-    client = HttpClient(user_agent=user_agent, timeout=timeout, max_concurrency=max_concurrency)
+    client = HttpClient(
+        user_agent=user_agent,
+        timeout=timeout,
+        max_concurrency=max_concurrency,
+        proxy=proxy,
+    )
     try:
         yield client
     finally:
