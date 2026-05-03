@@ -25,17 +25,25 @@ It works without API keys, and unlocks more sources when you provide them.
 
 ## Install
 
-Requires **Python 3.10+** (3.11+ recommended).
+Requires **Python 3.10+** (3.11+ recommended). Recommended is
+[`pipx`](https://pipx.pypa.io) so recce lives in its own venv outside iCloud
+Drive (which can corrupt regular venvs):
 
 ```bash
+brew install pipx
+pipx ensurepath
 git clone https://github.com/foldedarrow/recce.git
-cd recce
-python3 -m venv .venv && source .venv/bin/activate
-pip install .
+pipx install ./recce
 ```
 
-Run from anywhere afterwards as `recce`. To pick up new code changes
-(e.g. after `git pull`), rerun `pip install .` inside the venv.
+Run from anywhere afterwards as `recce`. To pull updates:
+
+```bash
+cd recce && git pull && pipx install . --force
+```
+
+For the GUI app (`recce-gui` + Mac `.app` bundle), install with the
+`[gui]` extra: see the [GUI app](#gui-app) section below.
 
 ### Optional: API keys
 
@@ -109,6 +117,57 @@ and a green "Confirmed hits" panel summarising what was actually found. Add
 `--json path.json` to also dump the raw report for downstream tooling.
 
 ---
+
+## GUI app
+
+recce ships with a Streamlit-based GUI that wraps the same async modules as
+the CLI. Three tabs (Username / Email / Phone), forms for every flag, live
+results, CSV/JSON download buttons.
+
+### Install
+
+```bash
+pipx install '/path/to/recce[gui]' --force
+```
+
+The `[gui]` extra adds `streamlit` and `pandas` to recce's venv. The CLI
+keeps working unchanged.
+
+### Run from the terminal
+
+```bash
+recce-gui
+```
+
+…opens at <http://localhost:8501>. `Ctrl+C` to stop.
+
+### Wrap as a Mac `.app` (Dock icon)
+
+One-time setup uses [Pake](https://github.com/tw93/Pake) to wrap the GUI
+into a real `.app` bundle, plus a tiny launcher `.app` that starts the
+server (if it isn't already running) and opens the window with one click:
+
+```bash
+brew install rust node
+npm install -g pake-cli
+
+cd /tmp && rm -rf rb && mkdir rb && cd rb
+pake http://localhost:8501 --name Recce --width 1200 --height 850 --hide-title-bar
+sudo rm -rf /Applications/Recce.app
+sudo cp -R /opt/homebrew/lib/node_modules/pake-cli/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Recce.app /Applications/
+
+cd /path/to/recce
+./bin/build-launcher-app.sh
+```
+
+You'll end up with:
+
+- `/Applications/Recce.app` — the Pake-wrapped UI (a webview window).
+- `~/Applications/Recce GUI.app` — the launcher. Drag this to your Dock.
+
+Double-click the launcher: it boots the Streamlit server in the background
+(logs to `~/Library/Logs/recce/gui.log`), waits for the port to come up,
+then opens the `Recce.app` window.
 
 ## How detection works
 

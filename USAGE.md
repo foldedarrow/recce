@@ -1,6 +1,10 @@
 # `recce` usage
 
-Personal OSINT toolkit — trace where a username, email, or phone number appears across the public internet, from one terminal command. Repo: https://github.com/foldedarrow/recce.
+Personal OSINT toolkit — trace where a username, email, or phone number appears across the public internet. Repo: https://github.com/foldedarrow/recce.
+
+Two ways to use it: **CLI** (terminal) and **GUI** (Mac app). The GUI is at the bottom of this page.
+
+## CLI
 
 You have **five commands**. Here's what each one does and how to use it.
 
@@ -125,3 +129,37 @@ EMAILREP_API_KEY=...    # EmailRep reputation — free / paid
 Verify they loaded with `recce doctor`.
 
 Run `recce <command> --help` for the per-command flag list.
+
+---
+
+## GUI (desktop app)
+
+If you'd rather click than type, recce ships with a Streamlit-based GUI that wraps the same async modules the CLI uses. You get one window with three tabs (Username / Email / Phone), forms for every flag, live results, and CSV/JSON download buttons.
+
+### Install (one-time)
+
+```bash
+pipx install '~/Documents/Claude/Projects/recce[gui]' --force
+```
+
+The `[gui]` extra adds `streamlit` + `pandas` to the recce venv. The CLI keeps working exactly as before.
+
+### Launch (terminal)
+
+```bash
+recce-gui
+```
+
+…opens the GUI in your default browser at <http://localhost:8501>. Press `Ctrl+C` to stop.
+
+### Launch (Dock app)
+
+If you want a real Mac app with a Dock icon and no browser chrome, see the README's `GUI app` section — one-time setup wraps the GUI with [Pake](https://github.com/tw93/Pake) into a `.app` bundle. After that, double-click **Recce GUI** in your Dock and the window opens.
+
+### What's in the GUI
+
+- **Sidebar** — mode selector, API-key status, site count, "Refresh WMN data" button.
+- **Username tab** — text input, NSFW toggle, category filter, run button. Confirmed hits in cards above the full table.
+- **Email tab** — text input, deep-mode toggle (with the same warning as the CLI: only run on emails you own).
+- **Phone tab** — text input, region selector, results with clickable WhatsApp / Truecaller / Sync.me / Google links.
+- **Downloads** — every report has CSV and JSON buttons.
