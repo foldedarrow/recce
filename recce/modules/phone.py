@@ -136,15 +136,23 @@ async def _numverify(e164: str, client: HttpClient, settings: Settings) -> Hit:
     )
 
 
-def _pivot_hits(e164: str, intl: str, national: str) -> list[Hit]:
+def _pivot_hits(e164: str, intl: str, national: str, region: str) -> list[Hit]:
     """Suggest where to check this number manually. We don't probe these
     automatically — most messaging apps' lookups require an authenticated
     client, and probing them can leak intent to the target.
     """
+    import re as _re
     from urllib.parse import quote
     bare = e164.lstrip("+")
+    national_digits = _re.sub(r"\D", "", national or "")
+    cc = (region or "").lower()
+    truecaller_url = (
+        f"https://www.truecaller.com/search/{cc}/{national_digits}"
+        if cc and national_digits else f"https://www.truecaller.com/search/{bare}"
+    )
     google_q = quote(f'"{intl}" OR "{national}"')
-    return [
+    sync_q = quote(e164)
+    hits = [
         Hit(
             source="WhatsApp",
             category="pivot",
@@ -165,8 +173,16 @@ def _pivot_hits(e164: str, intl: str, national: str) -> list[Hit]:
             source="Truecaller",
             category="pivot",
             status=Status.FOUND,
-            url=f"https://www.truecaller.com/search/{e164.replace('+', '')}",
-            summary="manual reverse-lookup — rate-limited; needs login for full data",
+            url=truecaller_url,
+            summary="manual reverse-lookup — first few lookups free, then login wall",
+            confidence=0.3,
+        ),
+        Hit(
+            source="Sync.me",
+            category="pivot",
+            status=Status.FOUND,
+            url=f"https://sync.me/search/?number={sync_q}",
+            summary="alternative reverse-lookup — free preview, login for full",
             confidence=0.3,
         ),
         Hit(
@@ -177,6 +193,7 @@ def _pivot_hits(e164: str, intl: str, national: str) -> list[Hit]:
             confidence=0.2,
         ),
     ]
+    return hits
 
 
 async def search_phone(
@@ -205,7 +222,8 @@ async def search_phone(
 
     intl = parsed_hit.extra.get("international", e164)
     national = parsed_hit.extra.get("national", e164)
-    for h in _pivot_hits(e164, intl, national):
+    region = parsed_hit.extra.get("region", default_region or "")
+    for h in _pivot_hits(e164, intl, national, region):
         report.add(h)
 
     rest = await asyncio.gather(
