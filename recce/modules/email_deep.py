@@ -38,22 +38,43 @@ from rich.progress import (
 from ..core.output import console
 from ..core.result import Hit, Status
 
+# Holehe modules whose probe is permanently broken (stale endpoints,
+# unreachable DNS, response shape changed upstream). Skipping them keeps
+# the report focused on signal. Reassess this list when holehe ships an
+# update — `git blame` this constant to date the last review.
+BROKEN_HOLEHE_MODULES: frozenset[str] = frozenset({
+    "blip",          # consistently times out
+    "buymeacoffee",  # AttributeError on response shape
+    "crevado",       # IndexError
+    "deliveroo",     # DNS gone
+    "evernote",      # IndexError
+    "github",        # IndexError (was email -> commits API; broken)
+    "issuu",         # DNS gone
+    "lastfm",        # JSONDecodeError
+    "pinterest",     # JSONDecodeError
+    "rocketreach",   # KeyError
+    "samsung",       # IndexError
+    "snapchat",      # IndexError
+    "soundcloud",    # IndexError
+})
+
 
 def _load_modules() -> list[tuple[str, str, Any]]:
-    """Return [(category, site_name, callable), …] for every holehe leaf module."""
+    """Return [(category, site_name, callable), …] for every holehe leaf module
+    that isn't on the broken-module blocklist."""
     from holehe.core import import_submodules
     import holehe.modules as root
 
     sites = import_submodules(root)
     out: list[tuple[str, str, Any]] = []
     for module_path, module in sites.items():
-        # Path looks like 'holehe.modules.<category>.<site>'. Skip category
-        # packages whose function is None.
         parts = module_path.split(".")
         if len(parts) < 4:
             continue
         category = parts[2]
         site_name = parts[-1]
+        if site_name in BROKEN_HOLEHE_MODULES:
+            continue
         fn = getattr(module, site_name, None)
         if fn is None or not callable(fn):
             continue
@@ -149,28 +170,39 @@ async def _run_one(
     return _to_hit(category, site_name, out[0], elapsed_ms)
 
 
+def _is_rate_limited(hit: Hit) -> bool:
+    return hit.status is Status.SKIPPED and "rate" in (hit.summary or "").lower()
+
+
 async def deep_email_probes(
     email: str,
     *,
     timeout: float = 12.0,
     show_progress: bool = True,
+    retry: bool = True,
+    retry_wait: float = 15.0,
 ) -> list[Hit]:
-    """Run every holehe probe module against the given email, concurrently."""
+    """Run every holehe probe module against the given email, concurrently.
+
+    If `retry=True`, modules that came back rate-limited are retried once
+    after `retry_wait` seconds — many sites' rate-limit windows are short
+    enough that a brief pause turns ~half of those into real hits.
+    """
     modules = _load_modules()
 
-    # Holehe modules all expect an httpx.AsyncClient — they often set their
-    # own headers per-request, so we use a default client without a
-    # browser User-Agent baked in (some probes are picky about this).
+    # Holehe modules expect an httpx.AsyncClient. They often set their own
+    # headers per-request, so we leave the client's defaults alone.
     client = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
 
-    try:
+    async def run_pass(
+        targets: list[tuple[str, str, Any]],
+        progress_label: str,
+    ) -> list[Hit]:
         if not show_progress:
-            tasks = [
-                _run_one(cat, name, fn, email, client, per_module_timeout=timeout)
-                for cat, name, fn in modules
-            ]
-            return list(await asyncio.gather(*tasks))
-
+            return list(await asyncio.gather(
+                *(_run_one(c, n, fn, email, client, per_module_timeout=timeout)
+                  for c, n, fn in targets)
+            ))
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -180,19 +212,48 @@ async def deep_email_probes(
             console=console,
             transient=True,
         ) as progress:
-            task = progress.add_task(
-                f"Probing [bold]{email}[/] across {len(modules)} sites…",
-                total=len(modules),
-            )
+            task = progress.add_task(progress_label, total=len(targets))
 
             async def runner(cat: str, name: str, fn: Any) -> Hit:
                 hit = await _run_one(cat, name, fn, email, client, per_module_timeout=timeout)
                 progress.advance(task)
                 return hit
 
-            results = await asyncio.gather(
-                *(runner(cat, name, fn) for cat, name, fn in modules)
+            return list(await asyncio.gather(
+                *(runner(c, n, fn) for c, n, fn in targets)
+            ))
+
+    try:
+        results = await run_pass(
+            modules, f"Probing [bold]{email}[/] across {len(modules)} sites…"
+        )
+
+        if not retry:
+            return results
+
+        rl_indices = [i for i, h in enumerate(results) if _is_rate_limited(h)]
+        if not rl_indices:
+            return results
+
+        retry_targets = [modules[i] for i in rl_indices]
+        console.print(
+            f"[dim]→ {len(retry_targets)} probes were rate-limited. "
+            f"Waiting {int(retry_wait)}s and retrying once…[/]"
+        )
+        await asyncio.sleep(retry_wait)
+        retry_results = await run_pass(
+            retry_targets, f"Retrying [bold]{len(retry_targets)}[/] rate-limited probes…"
+        )
+        salvaged = 0
+        for orig_idx, retry_hit in zip(rl_indices, retry_results):
+            if not _is_rate_limited(retry_hit) and retry_hit.status is not Status.ERROR:
+                results[orig_idx] = retry_hit
+                if retry_hit.is_found:
+                    salvaged += 1
+        if salvaged:
+            console.print(
+                f"[dim]→ Retry pass surfaced [bold green]{salvaged}[/] new hit(s).[/]"
             )
-            return list(results)
+        return results
     finally:
         await client.aclose()

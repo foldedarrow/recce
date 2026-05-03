@@ -64,6 +64,9 @@ def cmd_username(
     show_misses: bool = typer.Option(
         False, "--show-misses", help="Print every site checked, including 'not found'."
     ),
+    show_errors: bool = typer.Option(
+        False, "--show-errors", help="Show probes that errored out (network failures, broken modules)."
+    ),
     json_out: Optional[Path] = typer.Option(
         None, "--json", help="Also write the full report to this JSON file."
     ),
@@ -99,7 +102,7 @@ def cmd_username(
         console.print(f"[red]error:[/] {e}")
         raise typer.Exit(2) from e
 
-    render_report(report, show_misses=show_misses)
+    render_report(report, show_misses=show_misses, show_errors=show_errors)
     render_summary_panel(report)
     _maybe_export(report, json_out)
 
@@ -113,6 +116,9 @@ def cmd_email(
              "Slower (~30-60s) and only safe to use on emails you own.",
     ),
     show_misses: bool = typer.Option(False, "--show-misses"),
+    show_errors: bool = typer.Option(
+        False, "--show-errors", help="Show probes that errored out (network failures, broken modules)."
+    ),
     json_out: Optional[Path] = typer.Option(None, "--json"),
 ) -> None:
     settings = Settings.load()
@@ -140,7 +146,7 @@ def cmd_email(
         console.print(f"[red]error:[/] {e}")
         raise typer.Exit(2) from e
 
-    render_report(report, show_misses=show_misses)
+    render_report(report, show_misses=show_misses, show_errors=show_errors)
     render_summary_panel(report)
     _maybe_export(report, json_out)
 
@@ -150,6 +156,9 @@ def cmd_phone(
     phone: str = typer.Argument(..., help="Phone number; +country-code form preferred (e.g. +447700900123)."),
     region: str = typer.Option("GB", "--region", "-r", help="Default region if no '+' prefix (ISO-3166 alpha-2)."),
     show_misses: bool = typer.Option(False, "--show-misses"),
+    show_errors: bool = typer.Option(
+        False, "--show-errors", help="Show probes that errored out."
+    ),
     json_out: Optional[Path] = typer.Option(None, "--json"),
 ) -> None:
     settings = Settings.load()
@@ -166,7 +175,7 @@ def cmd_phone(
 
     report = asyncio.run(run())
 
-    render_report(report, show_misses=show_misses)
+    render_report(report, show_misses=show_misses, show_errors=show_errors)
     render_summary_panel(report)
     _maybe_export(report, json_out)
 

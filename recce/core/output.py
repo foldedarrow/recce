@@ -37,11 +37,26 @@ _STATUS_GLYPH = {
 def banner(title: str, subtitle: str | None = None) -> None:
     text = Text(title, style="bold cyan")
     if subtitle:
-        text.append(f"\n{subtitle}", style="dim")
+        sub = Text.from_markup(subtitle, style="dim")
+        text.append("\n")
+        text.append_text(sub)
     console.print(Panel(text, border_style="cyan", padding=(0, 2)))
 
 
-def render_report(report: Report, *, show_misses: bool = False) -> None:
+def _row_visible(h: Hit, show_misses: bool, show_errors: bool) -> bool:
+    if h.status is Status.NOT_FOUND:
+        return show_misses
+    if h.status is Status.ERROR:
+        return show_errors
+    return True  # FOUND, SKIPPED, UNKNOWN are always shown
+
+
+def render_report(
+    report: Report,
+    *,
+    show_misses: bool = False,
+    show_errors: bool = False,
+) -> None:
     found = report.found
     errors = report.errors
 
@@ -50,10 +65,11 @@ def render_report(report: Report, *, show_misses: bool = False) -> None:
     header.append(f"{report.query}", style="bold white")
     header.append(f"   ({report.query_type})", style="dim")
     console.print(header)
+    error_hint = "" if show_errors else "  [dim](pass --show-errors to inspect)[/dim]"
     console.print(
         f"[dim]Sources checked: {len(report.hits)}   "
         f"Hits: [bold green]{len(found)}[/]   "
-        f"Errors: [red]{len(errors)}[/][/dim]"
+        f"Errors: [red]{len(errors)}[/][/dim]{error_hint if errors else ''}"
     )
     console.print(Rule(style="dim"))
 
@@ -63,9 +79,10 @@ def render_report(report: Report, *, show_misses: bool = False) -> None:
 
     for category in sorted(by_category):
         cat_hits = by_category[category]
-        cat_found = [h for h in cat_hits if h.is_found]
-        if not cat_found and not show_misses and not any(h.status is Status.ERROR for h in cat_hits):
+        visible_rows = [h for h in cat_hits if _row_visible(h, show_misses, show_errors)]
+        if not visible_rows:
             continue
+        cat_found = [h for h in cat_hits if h.is_found]
 
         table = Table(
             title=f"[bold]{category}[/]   "
@@ -82,12 +99,10 @@ def render_report(report: Report, *, show_misses: bool = False) -> None:
         table.add_column("ms", justify="right", style="dim", no_wrap=True)
 
         rows = sorted(
-            cat_hits,
+            visible_rows,
             key=lambda h: (h.status is not Status.FOUND, h.status is Status.ERROR, h.source.lower()),
         )
         for h in rows:
-            if h.status is Status.NOT_FOUND and not show_misses:
-                continue
             glyph = _STATUS_GLYPH[h.status]
             style = _STATUS_STYLE[h.status]
             url = h.url or ""
