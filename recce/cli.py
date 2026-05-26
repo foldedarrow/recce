@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Optional
 
+import httpx
 import typer
 from rich.text import Text
 
@@ -24,7 +24,15 @@ from .core.result import Report
 from .modules.email import search_email
 from .modules.email_deep import deep_email_probes
 from .modules.phone import search_phone
-from .modules.username import refresh_wmn_data, search_username, site_count
+from .modules.username import (
+    WMN_REMOTE,
+    cache_status,
+    category_counts,
+    clear_wmn_cache,
+    refresh_wmn_data,
+    search_username,
+    site_count,
+)
 
 app = typer.Typer(
     name="recce",
@@ -44,7 +52,7 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def _root(
-    version: Optional[bool] = typer.Option(
+    version: bool | None = typer.Option(
         None, "--version", "-V", callback=_version_callback, is_eager=True, help="Show version and exit."
     ),
 ) -> None:
@@ -59,7 +67,8 @@ def _maybe_export(reports: list[Report], json_out: Path | None, csv_out: Path | 
         else:
             for i, r in enumerate(reports, 1):
                 stem = json_out.stem
-                p = json_out.with_name(f"{stem}-{i:02d}-{r.query}{json_out.suffix}")
+                safe_query = "".join(c if c.isalnum() else "-" for c in r.query)[:60]
+                p = json_out.with_name(f"{stem}-{i:02d}-{safe_query}{json_out.suffix}")
                 export_json(r, p)
     if csv_out:
         export_csv(reports, csv_out)
@@ -84,16 +93,27 @@ def _read_targets(target: str | None, file: Path | None) -> list[str]:
     return targets
 
 
+def _parse_csv_set(raw: str | None) -> set[str] | None:
+    values = {s.strip().lower() for s in raw.split(",")} if raw else set()
+    return {s for s in values if s} or None
+
+
+def _print_categories(*, include_nsfw: bool) -> None:
+    counts = category_counts(include_nsfw=include_nsfw)
+    for name, count in counts.items():
+        console.print(f"  [bold]{name}[/]  [dim]{count}[/]")
+
+
 @app.command("username", help="Hunt a username across hundreds of platforms (WhatsMyName + curated list).")
 def cmd_username(
-    username: Optional[str] = typer.Argument(None, help="Username to search for, e.g. 'foldedarrow'."),
-    file: Optional[Path] = typer.Option(
+    username: str | None = typer.Argument(None, help="Username to search for, e.g. 'foldedarrow'."),
+    file: Path | None = typer.Option(
         None, "--file", "-f", help="File of usernames, one per line. Combinable with the positional arg.",
     ),
-    only: Optional[str] = typer.Option(
-        None, "--only", help="Comma-separated categories to include (e.g. 'coding,social').",
+    only: str | None = typer.Option(
+        None, "--only", help="Comma-separated categories to include (e.g. 'dev,social').",
     ),
-    exclude: Optional[str] = typer.Option(
+    exclude: str | None = typer.Option(
         None, "--exclude", help="Comma-separated categories to skip.",
     ),
     nsfw: bool = typer.Option(
@@ -105,21 +125,32 @@ def cmd_username(
     show_errors: bool = typer.Option(
         False, "--show-errors", help="Show probes that errored out.",
     ),
-    json_out: Optional[Path] = typer.Option(None, "--json", help="Write the report(s) to JSON."),
-    csv_out: Optional[Path] = typer.Option(None, "--csv", help="Write all hits to a CSV."),
-    proxy: Optional[str] = typer.Option(
+    json_out: Path | None = typer.Option(None, "--json", help="Write the report(s) to JSON."),
+    csv_out: Path | None = typer.Option(None, "--csv", help="Write all hits to a CSV."),
+    proxy: str | None = typer.Option(
         None, "--proxy", help="Route HTTP through a proxy (e.g. socks5://127.0.0.1:9050).",
     ),
-    concurrency: Optional[int] = typer.Option(
+    concurrency: int | None = typer.Option(
         None, "--concurrency", "-c", help="Override max parallel requests.",
+    ),
+    target_concurrency: int = typer.Option(
+        1, "--target-concurrency", help="How many input usernames to process at once in batch mode.",
+    ),
+    list_categories: bool = typer.Option(
+        False, "--list-categories", help="Print available username categories and exit.",
     ),
 ) -> None:
     settings = Settings.load()
     if concurrency:
         settings = Settings(**{**settings.__dict__, "max_concurrency": concurrency})
 
-    only_set = {s.strip() for s in only.split(",")} if only else None
-    excl_set = {s.strip() for s in exclude.split(",")} if exclude else None
+    if list_categories:
+        banner("recce › username categories")
+        _print_categories(include_nsfw=nsfw)
+        return
+
+    only_set = _parse_csv_set(only)
+    excl_set = _parse_csv_set(exclude)
     targets = _read_targets(username, file)
 
     n_sites = site_count(include_nsfw=nsfw)
@@ -133,16 +164,16 @@ def cmd_username(
             max_concurrency=settings.max_concurrency,
             proxy=proxy,
         ) as client:
-            return [
-                await search_username(
+            async def run_one(t: str) -> Report:
+                return await search_username(
                     t,
                     client,
                     only_categories=only_set,
                     exclude_categories=excl_set,
                     include_nsfw=nsfw,
                 )
-                for t in targets
-            ]
+
+            return await _run_bounded(run_one, targets, target_concurrency)
 
     try:
         reports = asyncio.run(run())
@@ -158,8 +189,8 @@ def cmd_username(
 
 @app.command("email", help="Look up an email: Gravatar, MX, breaches, reputation, profile pivots.")
 def cmd_email(
-    email: Optional[str] = typer.Argument(None, help="Email address."),
-    file: Optional[Path] = typer.Option(
+    email: str | None = typer.Argument(None, help="Email address."),
+    file: Path | None = typer.Option(
         None, "--file", "-f", help="File of emails, one per line.",
     ),
     deep: bool = typer.Option(
@@ -171,14 +202,34 @@ def cmd_email(
     show_errors: bool = typer.Option(
         False, "--show-errors", help="Show probes that errored out.",
     ),
-    json_out: Optional[Path] = typer.Option(None, "--json"),
-    csv_out: Optional[Path] = typer.Option(None, "--csv"),
-    proxy: Optional[str] = typer.Option(
+    json_out: Path | None = typer.Option(None, "--json"),
+    csv_out: Path | None = typer.Option(None, "--csv"),
+    proxy: str | None = typer.Option(
         None, "--proxy", help="Route HTTP through a proxy.",
+    ),
+    batch_concurrency: int = typer.Option(
+        1, "--batch-concurrency", help="How many emails to process at once.",
+    ),
+    deep_concurrency: int = typer.Option(
+        20, "--deep-concurrency", help="Max concurrent deep-mode signup/reset probes.",
+    ),
+    deep_retry: bool = typer.Option(
+        True, "--deep-retry/--no-deep-retry", help="Retry rate-limited deep probes once.",
+    ),
+    deep_retry_wait: float = typer.Option(
+        15.0, "--deep-retry-wait", help="Seconds to wait before the deep-mode retry pass.",
+    ),
+    own_emails: bool = typer.Option(
+        False,
+        "--i-own-these-emails",
+        help="Required for --deep; confirms you own or have consent for the email target(s).",
     ),
 ) -> None:
     settings = Settings.load()
     targets = _read_targets(email, file)
+    if deep and not own_emails:
+        console.print("[red]error:[/] --deep requires --i-own-these-emails")
+        raise typer.Exit(2)
 
     sub = f"{len(targets)} target(s)" + ("   · deep mode ON" if deep else "")
     banner("recce › email", subtitle=sub)
@@ -193,12 +244,20 @@ def cmd_email(
         ) as client:
             r = await search_email(addr, client, settings)
         if deep:
-            for hit in await deep_email_probes(addr, timeout=settings.timeout):
+            for hit in await deep_email_probes(
+                addr,
+                timeout=settings.timeout,
+                max_concurrency=deep_concurrency,
+                proxy=proxy,
+                retry=deep_retry,
+                retry_wait=deep_retry_wait,
+            ):
                 r.add(hit)
+            r.finish()
         return r
 
     try:
-        reports = asyncio.run(_run_serial(run_one, targets))
+        reports = asyncio.run(_run_bounded(run_one, targets, batch_concurrency))
     except ValueError as e:
         console.print(f"[red]error:[/] {e}")
         raise typer.Exit(2) from e
@@ -211,16 +270,19 @@ def cmd_email(
 
 @app.command("phone", help="Look up a phone number: parse, carrier, region, optional NumVerify.")
 def cmd_phone(
-    phone: Optional[str] = typer.Argument(None, help="Phone number; +country-code form preferred."),
-    file: Optional[Path] = typer.Option(
+    phone: str | None = typer.Argument(None, help="Phone number; +country-code form preferred."),
+    file: Path | None = typer.Option(
         None, "--file", "-f", help="File of phone numbers, one per line.",
     ),
     region: str = typer.Option("GB", "--region", "-r", help="Default region (ISO-3166 alpha-2)."),
     show_misses: bool = typer.Option(False, "--show-misses"),
     show_errors: bool = typer.Option(False, "--show-errors"),
-    json_out: Optional[Path] = typer.Option(None, "--json"),
-    csv_out: Optional[Path] = typer.Option(None, "--csv"),
-    proxy: Optional[str] = typer.Option(None, "--proxy"),
+    json_out: Path | None = typer.Option(None, "--json"),
+    csv_out: Path | None = typer.Option(None, "--csv"),
+    proxy: str | None = typer.Option(None, "--proxy"),
+    batch_concurrency: int = typer.Option(
+        1, "--batch-concurrency", help="How many phone numbers to process at once.",
+    ),
 ) -> None:
     settings = Settings.load()
     targets = _read_targets(phone, file)
@@ -236,7 +298,7 @@ def cmd_phone(
         ) as client:
             return await search_phone(num, client, settings, default_region=region)
 
-    reports = asyncio.run(_run_serial(run_one, targets))
+    reports = asyncio.run(_run_bounded(run_one, targets, batch_concurrency))
 
     for r in reports:
         render_report(r, show_misses=show_misses, show_errors=show_errors)
@@ -245,9 +307,13 @@ def cmd_phone(
 
 
 @app.command("update", help="Refresh the bundled WhatsMyName site database from upstream.")
-def cmd_update() -> None:
+def cmd_update(
+    reset_cache: bool = typer.Option(False, "--reset-cache", help="Delete cached WMN data before updating."),
+) -> None:
     settings = Settings.load()
     banner("recce › update", subtitle="fetching latest WhatsMyName data")
+    if reset_cache and clear_wmn_cache():
+        console.print("[dim]Removed cached WMN data before refresh.[/]")
 
     async def run():
         async with http_client(
@@ -259,7 +325,7 @@ def cmd_update() -> None:
 
     try:
         before, after = asyncio.run(run())
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         console.print(f"[red]error:[/] {e}")
         raise typer.Exit(1) from e
     delta = after - before
@@ -270,7 +336,10 @@ def cmd_update() -> None:
 
 
 @app.command("doctor", help="Check API keys and network reachability.")
-def cmd_doctor() -> None:
+def cmd_doctor(
+    network: bool = typer.Option(True, "--network/--no-network", help="Run lightweight network checks."),
+    proxy: str | None = typer.Option(None, "--proxy", help="Proxy to use for network checks."),
+) -> None:
     settings = Settings.load()
     banner("recce › doctor", subtitle="checking config")
     keys = {
@@ -289,6 +358,18 @@ def cmd_doctor() -> None:
         f"\n  [dim]username sites loaded:[/] [bold]{n_default}[/] "
         f"([dim]+{n_nsfw - n_default} NSFW available behind --nsfw[/])"
     )
+    cache = cache_status()
+    if cache["exists"]:
+        validity = "valid" if cache["valid"] else "invalid"
+        site_text = f" · {cache['sites']} cached sites" if cache.get("sites") is not None else ""
+        console.print(f"  [dim]WMN cache:[/] {validity}{site_text}  [dim]{cache['path']}[/]")
+    else:
+        console.print("  [dim]WMN cache:[/] using bundled snapshot")
+    if network:
+        console.print("\n[dim]Network checks:[/]")
+        for name, ok, detail in asyncio.run(_doctor_network(settings, proxy=proxy)):
+            marker = "[green]ok[/]" if ok else "[red]fail[/]"
+            console.print(f"  {marker:>10}  {name}  [dim]{detail}[/]")
     console.print(
         "\n[dim]Unset keys mean those sources will be skipped. "
         "See `.env.example` for where to get each.[/]"
@@ -306,12 +387,40 @@ def _print_key_status(settings: Settings, keys: list[str]) -> None:
     console.print(line)
 
 
-async def _run_serial(fn, items: list[str]) -> list[Report]:
-    """Run `fn(item)` for each item sequentially. Used when each item creates
-    its own short-lived HTTP client."""
-    out: list[Report] = []
-    for item in items:
-        out.append(await fn(item))
+async def _run_bounded(fn, items: list[str], limit: int) -> list[Report]:
+    """Run `fn(item)` for each item with a small target-level concurrency cap."""
+    sem = asyncio.Semaphore(max(1, limit))
+
+    async def runner(item: str) -> Report:
+        async with sem:
+            return await fn(item)
+
+    return list(await asyncio.gather(*(runner(item) for item in items)))
+
+
+async def _doctor_network(settings: Settings, proxy: str | None = None) -> list[tuple[str, bool, str]]:
+    checks = [
+        ("example.com", "https://example.com"),
+        ("WhatsMyName data", WMN_REMOTE),
+        ("GitHub API", "https://api.github.com/rate_limit"),
+    ]
+    out: list[tuple[str, bool, str]] = []
+    async with http_client(
+        user_agent=settings.user_agent,
+        timeout=min(settings.timeout, 8.0),
+        max_concurrency=3,
+        proxy=proxy,
+    ) as client:
+        for name, url in checks:
+            try:
+                resp = await client.get(url)
+            except httpx.HTTPError as e:
+                out.append((name, False, str(e)[:80]))
+                continue
+            if resp is None:
+                out.append((name, False, "network error / timeout"))
+            else:
+                out.append((name, resp.status_code < 400, f"HTTP {resp.status_code}"))
     return out
 
 

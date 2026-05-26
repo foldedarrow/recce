@@ -62,8 +62,8 @@ BROKEN_HOLEHE_MODULES: frozenset[str] = frozenset({
 def _load_modules() -> list[tuple[str, str, Any]]:
     """Return [(category, site_name, callable), …] for every holehe leaf module
     that isn't on the broken-module blocklist."""
-    from holehe.core import import_submodules
     import holehe.modules as root
+    from holehe.core import import_submodules
 
     sites = import_submodules(root)
     out: list[tuple[str, str, Any]] = []
@@ -150,7 +150,7 @@ async def _run_one(
             summary="timed out",
             elapsed_ms=int((time.perf_counter() - started) * 1000),
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return Hit(
             source=site_name,
             category=f"deep/{category}",
@@ -178,6 +178,8 @@ async def deep_email_probes(
     email: str,
     *,
     timeout: float = 12.0,
+    max_concurrency: int = 20,
+    proxy: str | None = None,
     show_progress: bool = True,
     retry: bool = True,
     retry_wait: float = 15.0,
@@ -192,16 +194,23 @@ async def deep_email_probes(
 
     # Holehe modules expect an httpx.AsyncClient. They often set their own
     # headers per-request, so we leave the client's defaults alone.
-    client = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+    client_kwargs: dict[str, Any] = {"timeout": timeout, "follow_redirects": True}
+    if proxy:
+        client_kwargs["proxy"] = proxy
+    client = httpx.AsyncClient(**client_kwargs)
+    sem = asyncio.Semaphore(max(1, max_concurrency))
 
     async def run_pass(
         targets: list[tuple[str, str, Any]],
         progress_label: str,
     ) -> list[Hit]:
+        async def guarded_run(cat: str, name: str, fn: Any) -> Hit:
+            async with sem:
+                return await _run_one(cat, name, fn, email, client, per_module_timeout=timeout)
+
         if not show_progress:
             return list(await asyncio.gather(
-                *(_run_one(c, n, fn, email, client, per_module_timeout=timeout)
-                  for c, n, fn in targets)
+                *(guarded_run(c, n, fn) for c, n, fn in targets)
             ))
         with Progress(
             SpinnerColumn(),
@@ -215,7 +224,7 @@ async def deep_email_probes(
             task = progress.add_task(progress_label, total=len(targets))
 
             async def runner(cat: str, name: str, fn: Any) -> Hit:
-                hit = await _run_one(cat, name, fn, email, client, per_module_timeout=timeout)
+                hit = await guarded_run(cat, name, fn)
                 progress.advance(task)
                 return hit
 
@@ -245,7 +254,7 @@ async def deep_email_probes(
             retry_targets, f"Retrying [bold]{len(retry_targets)}[/] rate-limited probes…"
         )
         salvaged = 0
-        for orig_idx, retry_hit in zip(rl_indices, retry_results):
+        for orig_idx, retry_hit in zip(rl_indices, retry_results, strict=True):
             if not _is_rate_limited(retry_hit) and retry_hit.status is not Status.ERROR:
                 results[orig_idx] = retry_hit
                 if retry_hit.is_found:

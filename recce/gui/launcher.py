@@ -35,7 +35,8 @@ def main() -> None:
         "--server.headless", "true",
         "--browser.gatherUsageStats", "false",
         "--server.runOnSave", "false",
-    ] + sys.argv[1:]
+        *sys.argv[1:],
+    ]
     sys.argv = args
     st_main()
 

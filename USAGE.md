@@ -16,15 +16,16 @@ Search 720+ platforms in parallel for an account using that username. Backed by 
 
 ```bash
 recce username foldedarrow                              # basic
-recce username foldedarrow --only coding,social         # restrict categories
+recce username --list-categories                        # show valid categories
+recce username foldedarrow --only dev,social            # restrict categories
 recce username foldedarrow --exclude gaming             # skip categories
 recce username foldedarrow --nsfw                       # include adult sites (off by default)
-recce username --file handles.txt                       # batch: one handle per line
+recce username --file handles.txt --target-concurrency 2 # batch: one handle per line
 recce username foldedarrow --csv hits.csv               # export CSV
 recce username foldedarrow --show-misses                # show every site, not just hits
 ```
 
-**Categories** include: `coding`, `social`, `gaming`, `tech`, `images`, `hobby`, `business`, `finance`, `misc`, `video`, `music`, plus more.
+**Categories** include: `dev`, `social`, `video`, `audio`, `art`, `gaming`, `fandom`, `blog`, `creator`, `business`, `fitness`, `civic`, `messaging`, `web3`, plus more from WMN.
 
 ---
 
@@ -34,12 +35,12 @@ Look up an email. Without flags it's quick (Gravatar, MX provider, basic checks)
 
 ```bash
 recce email someone@example.com                         # quick: ~5 seconds
-recce email someone@example.com --deep                  # full: ~30–60 seconds
-recce email --file emails.txt --deep                    # batch + deep
+recce email someone@example.com --deep --i-own-these-emails
+recce email --file emails.txt --deep --i-own-these-emails --batch-concurrency 1
 recce email someone@example.com --json out.json
 ```
 
-**`--deep` is only safe to use on emails you own** — it sends real probes to each site's account-recovery system.
+**`--deep` is only safe to use on emails you own or have explicit consent for** — it sends real probes to each site's account-recovery system, so the CLI now requires `--i-own-these-emails`.
 
 ---
 
@@ -64,16 +65,18 @@ Refresh the WhatsMyName site database from upstream. Run this every few months �
 
 ```bash
 recce update
+recce update --reset-cache
 ```
 
 ---
 
 ## 5. `recce doctor`
 
-Sanity check: shows which API keys you have set, total site count, and how many NSFW sites are gated.
+Sanity check: shows which API keys you have set, total site count, WMN cache status, how many NSFW sites are gated, and lightweight network reachability.
 
 ```bash
 recce doctor
+recce doctor --no-network
 ```
 
 ---
@@ -97,7 +100,7 @@ recce doctor
 **Check your own footprint:**
 ```bash
 recce username your_handle
-recce email your@email.com --deep
+recce email your@email.com --deep --i-own-these-emails
 recce phone "+44yournumber"
 ```
 
@@ -159,7 +162,7 @@ If you want a real Mac app with a Dock icon and no browser chrome, see the READM
 ### What's in the GUI
 
 - **Sidebar** — mode selector, API-key status, site count, "Refresh WMN data" button.
-- **Username tab** — text input, NSFW toggle, category filter, run button. Confirmed hits in cards above the full table.
-- **Email tab** — text input, deep-mode toggle (with the same warning as the CLI: only run on emails you own).
+- **Username tab** — text input, NSFW toggle, category include/exclude filters, run button. Confirmed hits in cards above the full table.
+- **Email tab** — text input, consent-gated deep-mode toggle, deep concurrency/retry controls.
 - **Phone tab** — text input, region selector, results with clickable WhatsApp / Truecaller / Sync.me / Google links.
 - **Downloads** — every report has CSV and JSON buttons.
