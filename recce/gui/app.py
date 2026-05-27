@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Streamlit GUI for recce — three modes (username / email / phone) on top
+"""Streamlit GUI for recce — modes on top
 of the same async modules the CLI uses.
 
 Run via the `recce-gui` console script, which invokes:
@@ -20,6 +20,7 @@ from recce.config import Settings
 from recce.core.http import http_client
 from recce.core.investigations import InvestigationStore
 from recce.core.result import Report, Status
+from recce.modules.domain import search_domain
 from recce.modules.email import search_email
 from recce.modules.email_deep import deep_email_probes
 from recce.modules.phone import search_phone
@@ -72,7 +73,7 @@ with st.sidebar:
 
     mode = st.radio(
         "Mode",
-        ["Investigations", "Username", "Email", "Phone"],
+        ["Investigations", "Username", "Email", "Phone", "Domain"],
         horizontal=False,
         label_visibility="collapsed",
     )
@@ -136,6 +137,7 @@ with st.sidebar:
         ("Hunter", settings.hunter_api_key, "hunter.io/api"),
         ("NumVerify", settings.numverify_api_key, "numverify.com"),
         ("EmailRep", settings.emailrep_api_key, "emailrep.io"),
+        ("Companies House", settings.companies_house_key, "developer.company-information.service.gov.uk"),
     ]
     for label, val, url in keys:
         glyph = ":green[✓]" if val else ":red[✗]"
@@ -651,6 +653,101 @@ def _phone_mode() -> None:
         )
 
 
+def _domain_mode() -> None:
+    st.markdown("## Domain profile")
+    st.caption("Ownership, DNS, email infrastructure, web surface, passive subdomains, and company pivots.")
+
+    with st.form("d_form"):
+        target = st.text_input("Domain or URL", placeholder="example.com or https://www.example.com", key="d_target")
+        c1, c2, c3 = st.columns(3)
+        c1.checkbox("Show misses", value=False, key="d_misses")
+        c2.checkbox("Show errors", value=False, key="d_errors")
+        validate_subs = c3.checkbox("Validate subdomains", value=True, key="d_validate_subs")
+        only = st.text_input(
+            "Only categories",
+            placeholder="ownership,network,email,web,subs,companies,wayback",
+            key="d_only",
+        )
+        exclude = st.text_input("Exclude categories", placeholder="wayback,companies", key="d_exclude")
+        bruteforce = st.checkbox(
+            "Active subdomain bruteforce",
+            value=False,
+            help="Sends DNS queries from a wordlist against the target. Requires authorisation.",
+            key="d_bruteforce",
+        )
+        b1, b2, b3 = st.columns(3)
+        wordlist = b1.selectbox("Wordlist", ["small", "medium", "big"], index=1, key="d_wordlist")
+        brute_concurrency = b2.number_input("Bruteforce concurrency", min_value=1, max_value=200, value=25, step=1, key="d_brute_concurrency")
+        brute_rate = b3.number_input("Bruteforce rate", min_value=1, max_value=100, value=10, step=1, key="d_brute_rate")
+        authorised = st.checkbox(
+            "I am authorised to run active subdomain bruteforce",
+            value=False,
+            key="d_authorised",
+        )
+        submitted = st.form_submit_button("Run", type="primary", use_container_width=True)
+
+    if submitted and target.strip():
+        if bruteforce and not authorised:
+            st.error("Active subdomain bruteforce requires authorisation confirmation.")
+            return
+        only_set = {c.strip().lower() for c in only.split(",") if c.strip()} or None
+        exclude_set = {c.strip().lower() for c in exclude.split(",") if c.strip()} or None
+        with st.status(f"Profiling **{target}**…", expanded=False) as status:
+            async def run() -> Report:
+                async with http_client(
+                    user_agent=settings.user_agent,
+                    timeout=runtime_timeout,
+                    max_concurrency=int(runtime_concurrency),
+                    proxy=runtime_proxy.strip() or None,
+                ) as client:
+                    return await search_domain(
+                        target.strip(),
+                        client,
+                        settings,
+                        only_categories=only_set,
+                        exclude_categories=exclude_set,
+                        bruteforce=bruteforce,
+                        authorised=authorised,
+                        bruteforce_wordlist=wordlist,
+                        bruteforce_concurrency=int(brute_concurrency),
+                        bruteforce_rate=int(brute_rate),
+                        validate_subs=validate_subs,
+                    )
+
+            try:
+                report = asyncio.run(run())
+                status.update(label=f"Done — {len(report.found)} finding(s).", state="complete")
+                st.session_state["d_report"] = report
+                record_gui_run(
+                    report,
+                    {
+                        "mode": "domain",
+                        "only_categories": sorted(only_set) if only_set else [],
+                        "exclude_categories": sorted(exclude_set) if exclude_set else [],
+                        "validate_subs": validate_subs,
+                        "bruteforce": bruteforce,
+                        "i_am_authorised": authorised,
+                        "bruteforce_wordlist": wordlist,
+                        "bruteforce_concurrency": int(brute_concurrency),
+                        "bruteforce_rate": int(brute_rate),
+                        "timeout": runtime_timeout,
+                        "request_concurrency": int(runtime_concurrency),
+                        "proxy": bool(runtime_proxy.strip()),
+                    },
+                )
+            except ValueError as e:
+                status.update(label=str(e), state="error")
+                st.error(str(e))
+                return
+
+    if "d_report" in st.session_state:
+        render_results(
+            st.session_state["d_report"],
+            show_misses=st.session_state.get("d_misses", False),
+            show_errors=st.session_state.get("d_errors", False),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
@@ -661,5 +758,7 @@ elif mode == "Username":
     _username_mode()
 elif mode == "Email":
     _email_mode()
-else:
+elif mode == "Phone":
     _phone_mode()
+else:
+    _domain_mode()

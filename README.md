@@ -1,9 +1,9 @@
 # recce
 
-> Personal OSINT toolkit — trace where a **username**, **email**, or **phone number** has shown up across the public internet, from one terminal command.
+> Personal OSINT toolkit — trace where a **username**, **email**, **phone number**, or **domain** has shown up across the public internet, from one terminal command.
 
 `recce` is a fast, async, no-fluff reconnaissance CLI built for personal use:
-checking your own digital footprint, verifying contacts, tidying up after old
+checking your own digital footprint, profiling domains, verifying contacts, tidying up after old
 accounts, or just satisfying curiosity about whether `that_handle` belongs to
 the same person across platforms.
 
@@ -20,6 +20,7 @@ Recce Pro is a separate product.
 - **Username search** across **720+ platforms** — backed by the canonical [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) database (~700 sites) merged with a hand-curated list of bespoke probes for places WMN doesn't cover (multi-instance Mastodon, Bluesky AT-Proto, redirect-marker detection for Bandcamp/Substack/Wordpress). Refresh with `recce update`. Adult sites are gated behind `--nsfw`.
 - **Email lookups** — Gravatar (with profile + linked accounts), DNS/MX provider detection, [EmailRep](https://emailrep.io) reputation & associated profiles, [Have I Been Pwned](https://haveibeenpwned.com) breach history, [Hunter.io](https://hunter.io) verification, plus a consent-gated `--deep` mode that probes ~140 sites' signup/reset endpoints (via [holehe](https://github.com/megadose/holehe)) to discover registered accounts, with configurable concurrency and retry behavior.
 - **Phone number lookups** — full parse via Google's `libphonenumber` (region, type, carrier, timezone), optional [NumVerify](https://numverify.com) carrier verification, and manual-pivot rows with clickable URLs (WhatsApp, Google web search, Truecaller, Sync.me).
+- **Domain profiles** — ownership, DNS, ASN, email infrastructure, Microsoft 365 realm fingerprinting, web metadata, TLS certificate details, passive subdomain discovery, Wayback first-seen, and company-register pivots.
 - **Batch mode** — pass `--file targets.txt` to any subcommand to run a list of identifiers in one go.
 - **Output** — Rich terminal tables, optional `--json` export, `--csv` export of all hits across all targets, `--show-misses` and `--show-errors` flags.
 - **Network** — concurrent retrying HTTP/2 client, browser User-Agent, configurable concurrency, optional `--proxy` (HTTP/HTTPS/SOCKS).
@@ -106,6 +107,19 @@ recce phone +447700900123
 recce phone "07700 900123" --region GB
 recce phone "(415) 555-0123" --region US --json out.json
 ```
+
+### Domain
+
+```bash
+recce domain example.com
+recce domain example.com --only network,email,subs
+recce domain example.com --exclude wayback,companies
+recce domain example.com --bruteforce --i-am-authorised
+recce domain --file domains.txt --json out.json
+```
+
+Domain profiling is passive by default. Active subdomain bruteforce requires
+`--i-am-authorised`; see [`docs/CONSENT.md`](docs/CONSENT.md).
 
 ### Diagnostic
 
