@@ -18,11 +18,12 @@ import streamlit as st
 from recce import __version__
 from recce.config import Settings
 from recce.core.http import http_client
+from recce.core.investigations import InvestigationStore
 from recce.core.result import Report, Status
 from recce.modules.email import search_email
 from recce.modules.email_deep import deep_email_probes
 from recce.modules.phone import search_phone
-from recce.modules.username import category_counts, search_username, site_count
+from recce.modules.username import cache_status, category_counts, search_username, site_count
 
 # ---------------------------------------------------------------------------
 # Page
@@ -52,6 +53,14 @@ st.markdown(
 settings = Settings.load()
 
 
+@st.cache_resource
+def _investigation_store() -> InvestigationStore:
+    return InvestigationStore()
+
+
+store = _investigation_store()
+
+
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
@@ -63,10 +72,62 @@ with st.sidebar:
 
     mode = st.radio(
         "Mode",
-        ["Username", "Email", "Phone"],
+        ["Investigations", "Username", "Email", "Phone"],
         horizontal=False,
         label_visibility="collapsed",
     )
+
+    st.divider()
+    st.caption("Investigation")
+    investigations = store.list_investigations()
+    valid_ids = {inv["id"] for inv in investigations}
+    current_id = st.session_state.get("active_investigation_id")
+    if current_id not in valid_ids:
+        st.session_state["active_investigation_id"] = investigations[0]["id"] if investigations else None
+    active_id = st.session_state.get("active_investigation_id")
+    if investigations:
+        labels = [
+            f"{inv['name']} ({inv['case_ref'] or 'no ref'}) · {inv['run_count']} run(s)"
+            for inv in investigations
+        ]
+        selected_idx = next(
+            (idx for idx, inv in enumerate(investigations) if inv["id"] == active_id),
+            0,
+        )
+        selected_label = st.selectbox(
+            "Active case",
+            labels,
+            index=selected_idx,
+            label_visibility="collapsed",
+        )
+        st.session_state["active_investigation_id"] = investigations[labels.index(selected_label)]["id"]
+    else:
+        st.info("Create a case to start saving runs.")
+
+    with st.expander("New case", expanded=not investigations):
+        with st.form("new_investigation_form"):
+            new_name = st.text_input("Name", placeholder="Acme onboarding fraud review")
+            new_ref = st.text_input("Case ref", placeholder="KYC-2026-001")
+            new_classification = st.selectbox(
+                "Classification",
+                ["Internal", "Confidential", "Restricted"],
+                index=1,
+            )
+            new_scope = st.text_area("Scope note", placeholder="Authorised checks, subject scope, limits.")
+            create_case = st.form_submit_button("Create case", use_container_width=True)
+        if create_case:
+            try:
+                inv = store.create_investigation(
+                    name=new_name,
+                    case_ref=new_ref,
+                    classification=new_classification,
+                    scope_note=new_scope,
+                )
+                st.session_state["active_investigation_id"] = inv["id"]
+                st.success("Case created.")
+                st.rerun()
+            except ValueError as e:
+                st.error(str(e))
 
     st.divider()
     st.caption("API keys")
@@ -152,6 +213,28 @@ def report_to_df(report: Report) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+def active_investigation() -> dict[str, Any] | None:
+    inv_id = st.session_state.get("active_investigation_id")
+    if not inv_id:
+        return None
+    return store.get_investigation(inv_id)
+
+
+def record_gui_run(report: Report, args: dict[str, Any]) -> None:
+    inv = active_investigation()
+    if inv is None:
+        st.warning("Run completed but was not saved. Create or select a case to keep an audit trail.")
+        return
+    store.record_run(
+        investigation_id=inv["id"],
+        report=report,
+        args=args,
+        recce_version=__version__,
+        wmn_cache=cache_status(),
+    )
+    st.toast(f"Saved to case: {inv['name']}")
 
 
 def render_results(report: Report, *, show_misses: bool, show_errors: bool) -> None:
@@ -245,6 +328,100 @@ def _csv_bytes(report: Report) -> bytes:
 # Modes
 # ---------------------------------------------------------------------------
 
+def _investigations_mode() -> None:
+    st.markdown("## Investigations")
+    st.caption("Local case workspace for saved runs, evidence, audit history, and redacted exports.")
+
+    inv = active_investigation()
+    if inv is None:
+        st.info("Create a case in the sidebar to start recording GUI runs.")
+        return
+
+    runs = store.list_runs(inv["id"], limit=250)
+    audit = store.list_audit_events(inv["id"], limit=250)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Runs", len(runs))
+    c2.metric("Confirmed hits", sum(len([h for h in run["report"].get("hits", []) if h.get("status") == "found"]) for run in runs))
+    c3.metric("Classification", inv["classification"])
+    c4.metric("Status", inv["status"])
+
+    st.subheader(inv["name"])
+    meta_cols = st.columns([2, 2, 3])
+    meta_cols[0].markdown(f"**Case ref**  \n{inv['case_ref'] or '-'}")
+    meta_cols[1].markdown(f"**Created**  \n{inv['created_at']}")
+    meta_cols[2].markdown(f"**Storage**  \n`{store.db_path}`")
+    if inv.get("scope_note"):
+        st.markdown("**Scope note**")
+        st.write(inv["scope_note"])
+
+    export_base = "".join(c if c.isalnum() else "-" for c in inv["name"].lower())[:40]
+    st.subheader("Exports")
+    d1, d2, d3, d4 = st.columns(4)
+    d1.download_button(
+        "Full JSON",
+        store.export_json_bytes(inv["id"], redacted=False),
+        file_name=f"recce-{export_base}-full.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+    d2.download_button(
+        "Redacted JSON",
+        store.export_json_bytes(inv["id"], redacted=True),
+        file_name=f"recce-{export_base}-redacted.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+    d3.download_button(
+        "Markdown",
+        store.export_markdown(inv["id"], redacted=False).encode(),
+        file_name=f"recce-{export_base}.md",
+        mime="text/markdown",
+        use_container_width=True,
+    )
+    d4.download_button(
+        "Redacted MD",
+        store.export_markdown(inv["id"], redacted=True).encode(),
+        file_name=f"recce-{export_base}-redacted.md",
+        mime="text/markdown",
+        use_container_width=True,
+    )
+
+    run_rows = []
+    for run in runs:
+        hits = run["report"].get("hits", [])
+        confirmed = [h for h in hits if h.get("status") == "found"]
+        run_rows.append(
+            {
+                "Run at": run["created_at"],
+                "Type": run["query_type"],
+                "Query": run["query"],
+                "Sources": len(hits),
+                "Hits": len(confirmed),
+                "Version": run["recce_version"],
+            }
+        )
+    st.subheader("Run history")
+    if run_rows:
+        st.dataframe(pd.DataFrame(run_rows), hide_index=True, use_container_width=True)
+    else:
+        st.info("No runs recorded yet. Use Username, Email, or Phone while this case is active.")
+
+    with st.expander("Audit events", expanded=False):
+        if audit:
+            audit_rows = [
+                {
+                    "At": event["created_at"],
+                    "Event": event["event_type"],
+                    "Hash": event["event_hash"][:16],
+                    "Previous": event["previous_hash"][:16],
+                }
+                for event in audit
+            ]
+            st.dataframe(pd.DataFrame(audit_rows), hide_index=True, use_container_width=True)
+        else:
+            st.caption("No audit events recorded.")
+
 def _username_mode() -> None:
     st.markdown("## Username search")
     st.caption("Hunt a username across hundreds of platforms in parallel.")
@@ -292,6 +469,18 @@ def _username_mode() -> None:
                 report = asyncio.run(run())
                 status.update(label=f"Done — {len(report.found)} hit(s).", state="complete")
                 st.session_state["u_report"] = report
+                record_gui_run(
+                    report,
+                    {
+                        "mode": "username",
+                        "include_nsfw": nsfw,
+                        "only_categories": sorted(only) if only else [],
+                        "exclude_categories": sorted(exclude) if exclude else [],
+                        "timeout": runtime_timeout,
+                        "request_concurrency": int(runtime_concurrency),
+                        "proxy": bool(runtime_proxy.strip()),
+                    },
+                )
             except ValueError as e:
                 status.update(label=str(e), state="error")
                 st.error(str(e))
@@ -334,6 +523,9 @@ def _email_mode() -> None:
         submitted = st.form_submit_button("Run", type="primary", use_container_width=True)
 
     if submitted and target.strip():
+        if deep and active_investigation() is None:
+            st.error("Deep mode requires an active case so consent and evidence are recorded.")
+            return
         if deep and not own_email:
             st.error("Deep mode requires ownership or consent confirmation.")
             return
@@ -366,6 +558,19 @@ def _email_mode() -> None:
                 report = asyncio.run(run())
                 status.update(label=f"Done — {len(report.found)} hit(s).", state="complete")
                 st.session_state["e_report"] = report
+                record_gui_run(
+                    report,
+                    {
+                        "mode": "email",
+                        "deep": deep,
+                        "ownership_or_consent_confirmed": own_email,
+                        "deep_concurrency": int(deep_concurrency),
+                        "deep_retry": deep_retry,
+                        "timeout": runtime_timeout,
+                        "request_concurrency": int(runtime_concurrency),
+                        "proxy": bool(runtime_proxy.strip()),
+                    },
+                )
             except ValueError as e:
                 status.update(label=str(e), state="error")
                 st.error(str(e))
@@ -412,6 +617,16 @@ def _phone_mode() -> None:
                 report = asyncio.run(run())
                 status.update(label="Done.", state="complete")
                 st.session_state["p_report"] = report
+                record_gui_run(
+                    report,
+                    {
+                        "mode": "phone",
+                        "default_region": region,
+                        "timeout": runtime_timeout,
+                        "request_concurrency": int(runtime_concurrency),
+                        "proxy": bool(runtime_proxy.strip()),
+                    },
+                )
             except Exception as e:
                 status.update(label=str(e), state="error")
                 st.error(str(e))
@@ -429,7 +644,9 @@ def _phone_mode() -> None:
 # Dispatch
 # ---------------------------------------------------------------------------
 
-if mode == "Username":
+if mode == "Investigations":
+    _investigations_mode()
+elif mode == "Username":
     _username_mode()
 elif mode == "Email":
     _email_mode()
