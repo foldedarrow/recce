@@ -41,6 +41,7 @@ class Report(BaseModel):
     query: str
     query_type: str
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    completed_at: datetime | None = None
     hits: list[Hit] = Field(default_factory=list)
 
     @property
@@ -51,5 +52,14 @@ class Report(BaseModel):
     def errors(self) -> list[Hit]:
         return [h for h in self.hits if h.status is Status.ERROR]
 
+    @property
+    def duration_ms(self) -> int | None:
+        if self.completed_at is None:
+            return None
+        return int((self.completed_at - self.started_at).total_seconds() * 1000)
+
     def add(self, hit: Hit) -> None:
         self.hits.append(hit)
+
+    def finish(self) -> None:
+        self.completed_at = datetime.now(timezone.utc)

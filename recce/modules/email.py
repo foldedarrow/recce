@@ -44,7 +44,7 @@ async def _gravatar(email: str, client: HttpClient) -> Hit:
     try:
         data = resp.json()
         entry = (data.get("entry") or [{}])[0]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return Hit(source="Gravatar", category="profile", status=Status.FOUND,
                    url=profile_url, elapsed_ms=elapsed, summary="profile exists (json parse failed)")
     parts = []
@@ -104,7 +104,7 @@ async def _mx(email: str) -> Hit:
             summary=f"No MX records — {domain} cannot receive mail",
             elapsed_ms=elapsed,
         )
-    except (dns.exception.DNSException, Exception) as e:  # noqa: BLE001
+    except (dns.exception.DNSException, Exception) as e:
         elapsed = int((time.perf_counter() - started) * 1000)
         return Hit(source="DNS / MX", category="domain", status=Status.ERROR,
                    error=str(e)[:120], elapsed_ms=elapsed)
@@ -159,7 +159,7 @@ async def _emailrep(email: str, client: HttpClient, settings: Settings) -> Hit:
                    summary=f"HTTP {resp.status_code}", elapsed_ms=elapsed)
     try:
         data = resp.json()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return Hit(source="EmailRep", category="reputation", status=Status.UNKNOWN,
                    summary="bad json", elapsed_ms=elapsed)
 
@@ -222,7 +222,7 @@ async def _hibp(email: str, client: HttpClient, settings: Settings) -> Hit:
                    summary=f"HTTP {resp.status_code}", elapsed_ms=elapsed)
     try:
         breaches = resp.json()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return Hit(source="Have I Been Pwned", category="breach", status=Status.UNKNOWN,
                    summary="bad json", elapsed_ms=elapsed)
     names = [b.get("Name") or b.get("Title") for b in breaches][:8]
@@ -261,7 +261,7 @@ async def _hunter(email: str, client: HttpClient, settings: Settings) -> Hit:
                    summary=f"HTTP {code}", elapsed_ms=elapsed)
     try:
         data = resp.json()["data"]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return Hit(source="Hunter.io", category="verification", status=Status.UNKNOWN,
                    summary="bad json", elapsed_ms=elapsed)
     parts = [
@@ -322,4 +322,5 @@ async def search_email(email: str, client: HttpClient, settings: Settings) -> Re
     ]
     for hit in await asyncio.gather(*coros):
         report.add(hit)
+    report.finish()
     return report

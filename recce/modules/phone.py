@@ -6,7 +6,8 @@ import asyncio
 import time
 
 import phonenumbers
-from phonenumbers import carrier, geocoder, timezone as pn_timezone
+from phonenumbers import carrier, geocoder
+from phonenumbers import timezone as pn_timezone
 
 from ..config import Settings
 from ..core.http import HttpClient
@@ -112,7 +113,7 @@ async def _numverify(e164: str, client: HttpClient, settings: Settings) -> Hit:
                    summary=f"HTTP {code}", elapsed_ms=elapsed)
     try:
         data = resp.json()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return Hit(source="NumVerify", category="carrier", status=Status.UNKNOWN,
                    summary="bad json", elapsed_ms=elapsed)
     if data.get("error"):
@@ -218,6 +219,7 @@ async def search_phone(
                         "Pass a region (e.g. --region US) or include the country code (e.g. +44...)",
             )
         )
+        report.finish()
         return report
 
     intl = parsed_hit.extra.get("international", e164)
@@ -231,4 +233,5 @@ async def search_phone(
     )
     for h in rest:
         report.add(h)
+    report.finish()
     return report

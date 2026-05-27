@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import tempfile
 import time
 from importlib import resources
 from pathlib import Path
@@ -50,10 +51,15 @@ NSFW_CAT_RE = re.compile(r"\bnsfw\b", re.IGNORECASE)
 
 CACHE_DIR = Path.home() / ".cache" / "recce"
 CACHED_WMN = CACHE_DIR / "wmn-data.json"
+GUARDED_HTTP_STATUSES = {401, 403, 429}
 
 
 def _format(value: str, username: str) -> str:
     return value.replace("{u}", username)
+
+
+def _load_bundled_wmn_raw() -> str:
+    return resources.files("recce.data").joinpath("wmn-data.json").read_text()
 
 
 # ---------------------------------------------------------------------------
@@ -99,12 +105,20 @@ def _wmn_to_recce(entry: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _load_wmn_sites() -> list[dict[str, Any]]:
-    """Load WMN sites — prefer the user's cached refresh over the bundled snapshot."""
+    """Load WMN sites — prefer the user's cached refresh over the bundled snapshot.
+
+    A corrupt cache should not break recce entirely. If the cached update cannot
+    be parsed, fall back to the bundled snapshot and let `doctor` surface the
+    stale/corrupt cache state.
+    """
     if CACHED_WMN.exists():
-        raw = CACHED_WMN.read_text()
+        try:
+            raw = CACHED_WMN.read_text()
+            data = json.loads(raw)
+        except (OSError, json.JSONDecodeError):
+            data = json.loads(_load_bundled_wmn_raw())
     else:
-        raw = resources.files("recce.data").joinpath("wmn-data.json").read_text()
-    data = json.loads(raw)
+        data = json.loads(_load_bundled_wmn_raw())
     out: list[dict[str, Any]] = []
     for entry in data.get("sites", []):
         translated = _wmn_to_recce(entry)
@@ -134,6 +148,43 @@ def _load_sites(*, include_nsfw: bool = False) -> list[dict[str, Any]]:
 
 def site_count(*, include_nsfw: bool = False) -> int:
     return len(_load_sites(include_nsfw=include_nsfw))
+
+
+def category_counts(*, include_nsfw: bool = False) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for site in _load_sites(include_nsfw=include_nsfw):
+        category = site.get("category", "general")
+        counts[category] = counts.get(category, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def cache_status() -> dict[str, Any]:
+    if not CACHED_WMN.exists():
+        return {"path": str(CACHED_WMN), "exists": False, "valid": None, "sites": None}
+    try:
+        data = json.loads(CACHED_WMN.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        return {
+            "path": str(CACHED_WMN),
+            "exists": True,
+            "valid": False,
+            "sites": None,
+            "error": str(e)[:120],
+        }
+    sites = data.get("sites")
+    return {
+        "path": str(CACHED_WMN),
+        "exists": True,
+        "valid": isinstance(sites, list),
+        "sites": len(sites) if isinstance(sites, list) else None,
+    }
+
+
+def clear_wmn_cache() -> bool:
+    if not CACHED_WMN.exists():
+        return False
+    CACHED_WMN.unlink()
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +220,8 @@ def _classify(
             return Status.UNKNOWN, "ambiguous markers"
         if status_code in (404, 410):
             return Status.NOT_FOUND, None
+        if status_code in GUARDED_HTTP_STATUSES:
+            return Status.UNKNOWN, f"HTTP {status_code} (blocked/rate-limited)"
         return Status.UNKNOWN, f"HTTP {status_code}"
 
     if method == "status":
@@ -192,8 +245,10 @@ def _classify(
 
     if method == "present":
         marker = _format(site["marker"], username)
-        if status_code >= 400:
+        if status_code in (404, 410):
             return Status.NOT_FOUND, None
+        if status_code >= 400:
+            return Status.UNKNOWN, f"HTTP {status_code}"
         haystack = body.lower() if site.get("case_insensitive") else body
         needle = marker.lower() if site.get("case_insensitive") else marker
         if needle in haystack:
@@ -202,8 +257,10 @@ def _classify(
 
     if method == "post_json":
         marker = _format(site["marker"], username)
-        if status_code >= 400:
+        if status_code in (404, 410):
             return Status.NOT_FOUND, None
+        if status_code >= 400:
+            return Status.UNKNOWN, f"HTTP {status_code}"
         if marker in body:
             return Status.FOUND, None
         return Status.NOT_FOUND, None
@@ -252,7 +309,7 @@ async def _check_site(client: HttpClient, site: dict[str, Any], username: str) -
         else:
             resp = await client.get(probe_url, headers=headers,
                                     follow_redirects=follow_redirects)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         return Hit(
             source=site["name"],
             category=site.get("category", "general"),
@@ -277,6 +334,14 @@ async def _check_site(client: HttpClient, site: dict[str, Any], username: str) -
     body = resp.text if needs_body else ""
     location = resp.headers.get("Location", "")
     status, note = _classify(site, resp.status_code, body, username, location=location)
+    extra = {
+        "method": method,
+        "probe_url": probe_url,
+        "status_code": resp.status_code,
+        "final_url": str(resp.url),
+    }
+    if location:
+        extra["location"] = location
     confidence = {
         Status.FOUND: 0.85,
         Status.NOT_FOUND: 0.9,
@@ -291,6 +356,7 @@ async def _check_site(client: HttpClient, site: dict[str, Any], username: str) -
         url=profile_url,
         summary=note,
         confidence=confidence,
+        extra=extra,
         elapsed_ms=elapsed_ms,
     )
 
@@ -321,6 +387,7 @@ async def search_username(
         results = await asyncio.gather(*(_check_site(client, s, username) for s in sites))
         for r in results:
             report.add(r)
+        report.finish()
         return report
 
     with Progress(
@@ -346,6 +413,7 @@ async def search_username(
         for r in results:
             report.add(r)
 
+    report.finish()
     return report
 
 
@@ -372,6 +440,9 @@ async def refresh_wmn_data(client: HttpClient) -> tuple[int, int]:
     if "sites" not in parsed or not isinstance(parsed["sites"], list):
         raise RuntimeError("WMN response is not in the expected shape")
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    CACHED_WMN.write_text(payload)
+    with tempfile.NamedTemporaryFile("w", dir=CACHE_DIR, delete=False) as fh:
+        fh.write(payload)
+        tmp_path = Path(fh.name)
+    tmp_path.replace(CACHED_WMN)
     after = len([s for s in parsed["sites"] if s.get("valid", True) is not False])
     return before, after

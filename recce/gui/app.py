@@ -8,7 +8,6 @@ Run via the `recce-gui` console script, which invokes:
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import datetime
 from typing import Any
 
@@ -22,7 +21,7 @@ from recce.core.result import Report, Status
 from recce.modules.email import search_email
 from recce.modules.email_deep import deep_email_probes
 from recce.modules.phone import search_phone
-from recce.modules.username import search_username, site_count
+from recce.modules.username import category_counts, search_username, site_count
 
 # ---------------------------------------------------------------------------
 # Page
@@ -85,6 +84,23 @@ with st.sidebar:
     n_default = site_count(include_nsfw=False)
     n_nsfw = site_count(include_nsfw=True) - n_default
     st.markdown(f"**{n_default}** loaded · **{n_nsfw}** NSFW gated")
+    with st.expander("Categories", expanded=False):
+        counts = category_counts(include_nsfw=False)
+        st.caption(", ".join(f"{k} ({v})" for k, v in counts.items()))
+
+    st.divider()
+    st.caption("Runtime")
+    runtime_timeout = st.number_input(
+        "Timeout (seconds)", min_value=3.0, max_value=60.0, value=float(settings.timeout), step=1.0
+    )
+    runtime_concurrency = st.number_input(
+        "Request concurrency",
+        min_value=1,
+        max_value=100,
+        value=int(settings.max_concurrency),
+        step=1,
+    )
+    runtime_proxy = st.text_input("Proxy", placeholder="socks5://127.0.0.1:9050")
 
     if st.button("Refresh WMN data", use_container_width=True):
         from recce.modules.username import refresh_wmn_data
@@ -102,7 +118,7 @@ with st.sidebar:
                 before, after = asyncio.run(_refresh())
                 st.success(f"WMN refreshed: {before} → {after}")
                 st.rerun()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 st.error(f"Update failed: {e}")
 
 
@@ -199,7 +215,9 @@ def render_results(report: Report, *, show_misses: bool, show_errors: bool) -> N
 
 
 def _elapsed_str(report: Report) -> str:
-    total = sum((h.elapsed_ms or 0) for h in report.hits)
+    total = report.duration_ms
+    if total is None:
+        total = sum((h.elapsed_ms or 0) for h in report.hits)
     if total < 1000:
         return f"{total} ms"
     return f"{total / 1000:.1f} s"
@@ -234,29 +252,37 @@ def _username_mode() -> None:
         target = st.text_input("Username", placeholder="e.g. foldedarrow", key="u_target")
         c1, c2, c3 = st.columns(3)
         nsfw = c1.checkbox("Include NSFW sites", value=False, key="u_nsfw")
-        show_misses = c2.checkbox("Show misses", value=False, key="u_misses")
-        show_errors = c3.checkbox("Show errors", value=False, key="u_errors")
+        c2.checkbox("Show misses", value=False, key="u_misses")
+        c3.checkbox("Show errors", value=False, key="u_errors")
         cats = st.text_input(
             "Filter categories (comma-separated; leave blank for all)",
-            placeholder="coding,social,gaming",
+            placeholder="dev,social,gaming",
             help="Match WMN categories. See sidebar for total counts.",
             key="u_cats",
+        )
+        excludes = st.text_input(
+            "Exclude categories (comma-separated)",
+            placeholder="gaming,fandom",
+            key="u_excludes",
         )
         submitted = st.form_submit_button("Run", type="primary", use_container_width=True)
 
     if submitted and target.strip():
-        only = {c.strip() for c in cats.split(",") if c.strip()} or None
+        only = {c.strip().lower() for c in cats.split(",") if c.strip()} or None
+        exclude = {c.strip().lower() for c in excludes.split(",") if c.strip()} or None
         n_sites = site_count(include_nsfw=nsfw)
         with st.status(f"Hunting **{target}** across {n_sites} sites…", expanded=False) as status:
             async def run() -> Report:
                 async with http_client(
                     user_agent=settings.user_agent,
-                    timeout=settings.timeout,
-                    max_concurrency=settings.max_concurrency,
+                    timeout=runtime_timeout,
+                    max_concurrency=int(runtime_concurrency),
+                    proxy=runtime_proxy.strip() or None,
                 ) as client:
                     return await search_username(
                         target.strip(), client,
                         only_categories=only,
+                        exclude_categories=exclude,
                         include_nsfw=nsfw,
                         show_progress=False,
                     )
@@ -291,11 +317,25 @@ def _email_mode() -> None:
             help="Slower (~30–60s). Only run on emails you own — sends real probes to each site's account-recovery system.",
             key="e_deep",
         )
-        show_misses = c2.checkbox("Show misses", value=False, key="e_misses")
-        show_errors = c3.checkbox("Show errors", value=False, key="e_errors")
+        c2.checkbox("Show misses", value=False, key="e_misses")
+        c3.checkbox("Show errors", value=False, key="e_errors")
+        own_email = st.checkbox(
+            "I own this email or have consent",
+            value=False,
+            help="Required for deep mode.",
+            key="e_own",
+        )
+        d1, d2 = st.columns(2)
+        deep_concurrency = d1.number_input(
+            "Deep concurrency", min_value=1, max_value=60, value=20, step=1, key="e_deep_concurrency"
+        )
+        deep_retry = d2.checkbox("Retry rate-limited probes", value=True, key="e_deep_retry")
         submitted = st.form_submit_button("Run", type="primary", use_container_width=True)
 
     if submitted and target.strip():
+        if deep and not own_email:
+            st.error("Deep mode requires ownership or consent confirmation.")
+            return
         label = f"Looking up **{target}**…"
         if deep:
             label += " _(deep mode — this can take ~30–60s)_"
@@ -303,13 +343,22 @@ def _email_mode() -> None:
             async def run() -> Report:
                 async with http_client(
                     user_agent=settings.user_agent,
-                    timeout=settings.timeout,
-                    max_concurrency=settings.max_concurrency,
+                    timeout=runtime_timeout,
+                    max_concurrency=int(runtime_concurrency),
+                    proxy=runtime_proxy.strip() or None,
                 ) as client:
                     r = await search_email(target.strip(), client, settings)
                 if deep:
-                    for hit in await deep_email_probes(target.strip(), timeout=settings.timeout, show_progress=False):
+                    for hit in await deep_email_probes(
+                        target.strip(),
+                        timeout=runtime_timeout,
+                        max_concurrency=int(deep_concurrency),
+                        proxy=runtime_proxy.strip() or None,
+                        retry=deep_retry,
+                        show_progress=False,
+                    ):
                         r.add(hit)
+                    r.finish()
                 return r
 
             try:
@@ -333,7 +382,7 @@ def _phone_mode() -> None:
     st.markdown("## Phone lookup")
     st.caption("Parse, classify, and emit clickable manual-pivot links (WhatsApp, Truecaller, Sync.me, Google web search).")
 
-    REGIONS = ["GB", "US", "IE", "FR", "DE", "ES", "IT", "NL", "AU", "CA", "NZ", "JP"]
+    regions = ["GB", "US", "IE", "FR", "DE", "ES", "IT", "NL", "AU", "CA", "NZ", "JP"]
     with st.form("p_form"):
         target = st.text_input(
             "Phone number",
@@ -342,9 +391,9 @@ def _phone_mode() -> None:
             key="p_target",
         )
         c1, c2, c3 = st.columns(3)
-        region = c1.selectbox("Default region", REGIONS, index=0, key="p_region")
-        show_misses = c2.checkbox("Show misses", value=False, key="p_misses")
-        show_errors = c3.checkbox("Show errors", value=False, key="p_errors")
+        region = c1.selectbox("Default region", regions, index=0, key="p_region")
+        c2.checkbox("Show misses", value=False, key="p_misses")
+        c3.checkbox("Show errors", value=False, key="p_errors")
         submitted = st.form_submit_button("Run", type="primary", use_container_width=True)
 
     if submitted and target.strip():
@@ -352,8 +401,9 @@ def _phone_mode() -> None:
             async def run() -> Report:
                 async with http_client(
                     user_agent=settings.user_agent,
-                    timeout=settings.timeout,
-                    max_concurrency=settings.max_concurrency,
+                    timeout=runtime_timeout,
+                    max_concurrency=int(runtime_concurrency),
+                    proxy=runtime_proxy.strip() or None,
                 ) as client:
                     return await search_phone(target.strip(), client, settings, default_region=region)
 
@@ -361,7 +411,7 @@ def _phone_mode() -> None:
                 report = asyncio.run(run())
                 status.update(label="Done.", state="complete")
                 st.session_state["p_report"] = report
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 status.update(label=str(e), state="error")
                 st.error(str(e))
                 return

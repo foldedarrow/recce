@@ -14,7 +14,7 @@ It works without API keys, and unlocks more sources when you provide them.
 ## Features
 
 - **Username search** across **720+ platforms** — backed by the canonical [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) database (~700 sites) merged with a hand-curated list of bespoke probes for places WMN doesn't cover (multi-instance Mastodon, Bluesky AT-Proto, redirect-marker detection for Bandcamp/Substack/Wordpress). Refresh with `recce update`. Adult sites are gated behind `--nsfw`.
-- **Email lookups** — Gravatar (with profile + linked accounts), DNS/MX provider detection, [EmailRep](https://emailrep.io) reputation & associated profiles, [Have I Been Pwned](https://haveibeenpwned.com) breach history, [Hunter.io](https://hunter.io) verification, plus a `--deep` mode that probes ~140 sites' signup/reset endpoints (via [holehe](https://github.com/megadose/holehe)) to discover registered accounts, with a 15s retry pass for rate-limited probes.
+- **Email lookups** — Gravatar (with profile + linked accounts), DNS/MX provider detection, [EmailRep](https://emailrep.io) reputation & associated profiles, [Have I Been Pwned](https://haveibeenpwned.com) breach history, [Hunter.io](https://hunter.io) verification, plus a consent-gated `--deep` mode that probes ~140 sites' signup/reset endpoints (via [holehe](https://github.com/megadose/holehe)) to discover registered accounts, with configurable concurrency and retry behavior.
 - **Phone number lookups** — full parse via Google's `libphonenumber` (region, type, carrier, timezone), optional [NumVerify](https://numverify.com) carrier verification, and manual-pivot rows with clickable URLs (WhatsApp, Google web search, Truecaller, Sync.me).
 - **Batch mode** — pass `--file targets.txt` to any subcommand to run a list of identifiers in one go.
 - **Output** — Rich terminal tables, optional `--json` export, `--csv` export of all hits across all targets, `--show-misses` and `--show-errors` flags.
@@ -75,6 +75,7 @@ $EDITOR .env
 
 ```bash
 recce username foldedarrow
+recce username --list-categories
 recce username some_handle --only dev,social
 recce username some_handle --exclude gaming,fandom --json out.json
 recce username some_handle --show-misses        # print everything, not just hits
@@ -87,6 +88,7 @@ Categories: `dev`, `social`, `video`, `audio`, `art`, `gaming`, `fandom`, `blog`
 
 ```bash
 recce email someone@example.com
+recce email someone@example.com --deep --i-own-these-emails
 recce email someone@example.com --json out.json
 ```
 
@@ -104,7 +106,8 @@ recce phone "(415) 555-0123" --region US --json out.json
 ### Diagnostic
 
 ```bash
-recce doctor       # show which API keys are loaded
+recce doctor       # show API keys, cache state, and network reachability
+recce doctor --no-network
 recce --version
 ```
 
@@ -178,6 +181,11 @@ For username search, every site definition in [`recce/data/sites.json`](recce/da
 - `present` — body **must** contain a known "user exists" marker (e.g. a JSON field).
 - `post_json` — same but via a JSON POST (used for Roblox).
 
+Guarded responses such as `403` and `429` are treated as ambiguous rather than
+"not found" where a marker-based probe cannot actually inspect the account
+state. JSON/CSV exports include probe evidence such as method, probe URL, HTTP
+status, and final URL to make reviews and false-positive fixes easier.
+
 Sites that hide profiles behind heavy JS (Twitter/X, Instagram, LinkedIn,
 Facebook) are intentionally **excluded** — naive HTTP checks return false
 positives. If you want them, integrate a real headless browser; that is out of
@@ -189,6 +197,8 @@ scope here.
 
 - **Use only on yourself, on consenting third parties, or on legitimately
   public targets.** OSINT is a research technique, not a stalking tool.
+- Deep email mode requires explicit ownership/consent confirmation because it
+  sends live signup/reset probes to third-party services.
 - Some sites change their HTML / API and a site definition will need updating —
   PRs welcome.
 - Phone-number reverse lookup beyond carrier data requires paid data brokers,
