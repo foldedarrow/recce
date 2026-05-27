@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Username search across many platforms.
 
 Two site sources are merged at load time:

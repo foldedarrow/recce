@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Thin async HTTP wrapper with sane defaults, retries, and concurrency control."""
 
 from __future__ import annotations

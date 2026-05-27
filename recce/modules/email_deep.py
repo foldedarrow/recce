@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Deep email search — wraps the holehe library's signup/reset-endpoint
 probes to discover which sites have an account registered to an email.
 

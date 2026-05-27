@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Typer-based CLI."""
 
 from __future__ import annotations
@@ -228,7 +229,12 @@ def cmd_email(
     settings = Settings.load()
     targets = _read_targets(email, file)
     if deep and not own_emails:
-        console.print("[red]error:[/] --deep requires --i-own-these-emails")
+        console.print(
+            "[red]error:[/] --deep requires --i-own-these-emails. "
+            "Deep mode sends live signup/reset probes; use it only on emails "
+            "you own or have explicit consent to investigate. See USAGE.md "
+            "section 'recce email <addr>'."
+        )
         raise typer.Exit(2)
 
     sub = f"{len(targets)} target(s)" + ("   · deep mode ON" if deep else "")

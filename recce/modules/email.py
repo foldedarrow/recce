@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Email lookups: Gravatar, MX, EmailRep, HIBP, Hunter."""
 
 from __future__ import annotations
