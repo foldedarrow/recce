@@ -331,6 +331,12 @@ def _csv_bytes(report: Report) -> bytes:
 def _investigations_mode() -> None:
     st.markdown("## Investigations")
     st.caption("Local case workspace for saved runs, evidence, audit history, and redacted exports.")
+    st.info(
+        "Recce Pro stores investigation data locally at "
+        f"`{store.db_path}`. This file is not encrypted at the application layer. "
+        "Use full-disk encryption (BitLocker / FileVault / LUKS) on the host machine.",
+        icon="ℹ️",
+    )
 
     inv = active_investigation()
     if inv is None:
@@ -339,6 +345,7 @@ def _investigations_mode() -> None:
 
     runs = store.list_runs(inv["id"], limit=250)
     audit = store.list_audit_events(inv["id"], limit=250)
+    audit_ok, audit_message = store.verify_audit_chain()
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Runs", len(runs))
@@ -408,6 +415,10 @@ def _investigations_mode() -> None:
         st.info("No runs recorded yet. Use Username, Email, or Phone while this case is active.")
 
     with st.expander("Audit events", expanded=False):
+        if audit_ok:
+            st.success(f"Audit chain verified: {audit_message}")
+        else:
+            st.error(f"Audit chain verification failed: {audit_message}")
         if audit:
             audit_rows = [
                 {

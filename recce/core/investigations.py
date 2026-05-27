@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Local investigation workspace storage.
 
 This is intentionally standard-library only. The beta GUI needs a durable,
@@ -37,7 +38,13 @@ class InvestigationStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self.db_path = db_path or self.root / "investigations.sqlite3"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_private_db_file()
         self._init_db()
+
+    def _ensure_private_db_file(self) -> None:
+        fd = os.open(self.db_path, os.O_CREAT | os.O_APPEND, 0o600)
+        os.close(fd)
+        os.chmod(self.db_path, 0o600)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -227,6 +234,8 @@ class InvestigationStore:
         created_at = utc_now()
         payload_json = json.dumps(payload, sort_keys=True, default=str)
         previous_hash = self._last_audit_hash()
+        # "|" is reserved as a structural delimiter. payload_json is canonical
+        # JSON and is treated as one opaque field in the hash input.
         event_hash = hashlib.sha256(
             f"{previous_hash}|{created_at}|{event_type}|{payload_json}".encode()
         ).hexdigest()
@@ -251,6 +260,33 @@ class InvestigationStore:
                 event,
             )
         return self._decode_audit(event)
+
+    def verify_audit_chain(self) -> tuple[bool, str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT event_type, payload_json, created_at, previous_hash, event_hash
+                FROM audit_events
+                ORDER BY rowid ASC
+                """
+            ).fetchall()
+        previous_hash = ""
+        for index, row in enumerate(rows, start=1):
+            event = dict(row)
+            expected = hashlib.sha256(
+                "{previous_hash}|{created_at}|{event_type}|{payload_json}".format(
+                    previous_hash=previous_hash,
+                    created_at=event["created_at"],
+                    event_type=event["event_type"],
+                    payload_json=event["payload_json"],
+                ).encode()
+            ).hexdigest()
+            if event["previous_hash"] != previous_hash:
+                return False, f"event {index} previous hash mismatch"
+            if event["event_hash"] != expected:
+                return False, f"event {index} hash mismatch"
+            previous_hash = event["event_hash"]
+        return True, f"{len(rows)} event(s) verified"
 
     def export_investigation(
         self,
