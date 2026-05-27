@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Runtime configuration: loads optional API keys from env / .env file."""
 
 from __future__ import annotations

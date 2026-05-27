@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Console-script entry point: starts the Streamlit server.
 
 Equivalent to running::

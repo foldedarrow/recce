@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Streamlit GUI for recce — three modes (username / email / phone) on top
 of the same async modules the CLI uses.
 

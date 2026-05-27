@@ -9,6 +9,10 @@ the same person across platforms.
 
 It works without API keys, and unlocks more sources when you provide them.
 
+`recce` is the open-source engine that powers Recce Pro, a commercial
+self-hosted workspace for corporate investigators. AGPL covers this engine;
+Recce Pro is a separate product.
+
 ---
 
 ## Features
@@ -244,4 +248,5 @@ calling it from `search_email` / `search_phone`.
 
 ## Licence
 
-MIT — see [`LICENSE`](LICENSE).
+Licensed under AGPL-3.0-or-later from v0.4.0 onwards. Earlier releases remain
+MIT. See [`LICENSE`](LICENSE).
