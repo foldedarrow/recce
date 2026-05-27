@@ -125,6 +125,20 @@ and a green "Confirmed hits" panel summarising what was actually found. Add
 
 ---
 
+## Data storage
+
+The GUI investigations workspace stores case data locally at
+`~/.local/share/recce/investigations.sqlite3` by default. The database file is
+created with `0600` permissions where the host platform supports POSIX file
+modes.
+
+This beta build does not encrypt the SQLite database at the application layer.
+Use full-disk encryption on the host machine: BitLocker on Windows, FileVault
+on macOS, or LUKS on Linux. App-layer encryption-at-rest is deferred to the Pro
+Hardening phase before paid GA.
+
+---
+
 ## GUI app
 
 recce ships with a Streamlit-based GUI that wraps the same async modules as

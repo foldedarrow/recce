@@ -20,6 +20,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Licence is now AGPL-3.0-or-later from v0.4.0 onwards.
 - SPDX licence headers added across the Python codebase.
+- Investigation databases are created with `0600` file permissions where the
+  host platform supports POSIX modes.
+
+### Notes
+
+- The beta investigations database is local stdlib SQLite and is not encrypted
+  at the application layer. Use full-disk encryption on the host machine.
+  App-layer encryption-at-rest is deferred to Pro Hardening before paid GA.
 
 ### BREAKING
 

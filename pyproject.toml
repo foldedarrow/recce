@@ -58,7 +58,7 @@ Issues = "https://github.com/foldedarrow/recce/issues"
 packages = ["recce"]
 
 [tool.hatch.build.targets.sdist]
-include = ["recce/**/*", "README.md", "LICENSE"]
+include = ["recce/**/*", "docs/**/*", "README.md", "CHANGELOG.md", "CONTRIBUTING.md", "LICENSE"]
 
 [tool.ruff]
 line-length = 100
