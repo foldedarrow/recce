@@ -44,7 +44,7 @@ async def query(org_guess: str, ctx: SourceContext) -> Hit:
                 status=Status.FOUND,
                 url=top.get("links", {}).get("self"),
                 summary=f"{top.get('title')} · {top.get('company_status')} · {top.get('company_number')}",
-                extra={"items": items[:5]},
+                extra={"query": org_guess, "items": items[:5]},
                 confidence=0.55,
             )
         return Hit(

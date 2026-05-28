@@ -335,7 +335,13 @@ def cmd_phone(
             max_concurrency=settings.max_concurrency,
             proxy=proxy,
         ) as client:
-            return await search_phone(num, client, settings, default_region=region)
+            return await search_phone(
+                num,
+                client,
+                settings,
+                default_region=region,
+                skip_provider_ids=skip_provider_ids,
+            )
 
     reports = asyncio.run(_run_bounded(run_one, targets, batch_concurrency))
 

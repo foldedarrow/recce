@@ -27,6 +27,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   live adapter.
 - EmailRep and Hunter email verification now run through provider-native live
   adapters.
+- NumVerify now runs through a provider-native live adapter.
 - Probe evidence capture for username checks.
 - WMN cache hardening with corrupt-cache fallback and atomic update writes.
 - `recce username --list-categories`.
@@ -41,6 +42,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   host platform supports POSIX modes.
 - Install docs now steer beta users to non-editable GUI installs while the
   Python 3.13 editable-install console-script issue is tracked separately.
+- Companies House and SEC EDGAR domain lookups now use RDAP registrant
+  organisation evidence before falling back to a domain-label company guess.
 
 ### Notes
 

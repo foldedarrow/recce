@@ -14,6 +14,7 @@ from recce.modules.domain import (
     search_domain,
 )
 from recce.modules.domain_sources import SourceContext, source_registry
+from recce.modules.domain_sources import companies as companies_source
 
 
 class DummyClient:
@@ -112,3 +113,72 @@ async def test_search_domain_filters_categories(monkeypatch: pytest.MonkeyPatch)
     assert report.query_type == "domain"
     assert len(report.hits) == 1
     assert report.hits[0].category == "email"
+
+
+@pytest.mark.asyncio
+async def test_companies_source_uses_rdap_org_before_domain_label(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+
+    async def fake_rdap(domain: str, ctx: SourceContext) -> Hit:
+        del ctx
+        assert domain == "example.com"
+        return Hit(
+            source="RDAP",
+            category="ownership",
+            status=Status.FOUND,
+            extra={"org": "Example Holdings Ltd"},
+        )
+
+    async def fake_companies_house(org_guess: str, ctx: SourceContext) -> Hit:
+        del ctx
+        calls.append(("ch", org_guess))
+        return Hit(source="Companies House", category="companies", status=Status.NOT_FOUND)
+
+    async def fake_edgar(org_guess: str, ctx: SourceContext) -> Hit:
+        del ctx
+        calls.append(("edgar", org_guess))
+        return Hit(source="SEC EDGAR", category="companies", status=Status.NOT_FOUND)
+
+    monkeypatch.setattr(companies_source.rdap, "query", fake_rdap)
+    monkeypatch.setattr(companies_source.companies_house, "query", fake_companies_house)
+    monkeypatch.setattr(companies_source.edgar, "query", fake_edgar)
+
+    hits = await companies_source.query(
+        "example.com",
+        SourceContext(client=DummyClient(), settings=_settings()),  # type: ignore[arg-type]
+    )
+
+    assert [hit.source for hit in hits] == ["Companies House", "SEC EDGAR"]
+    assert calls == [("ch", "Example Holdings Ltd"), ("edgar", "Example Holdings Ltd")]
+
+
+@pytest.mark.asyncio
+async def test_companies_source_falls_back_to_domain_label_when_rdap_org_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = []
+
+    async def fake_rdap(domain: str, ctx: SourceContext) -> Hit:
+        del domain, ctx
+        return Hit(source="RDAP", category="ownership", status=Status.FOUND, extra={"org": None})
+
+    async def fake_companies_house(org_guess: str, ctx: SourceContext) -> Hit:
+        del ctx
+        calls.append(org_guess)
+        return Hit(source="Companies House", category="companies", status=Status.NOT_FOUND)
+
+    async def fake_edgar(org_guess: str, ctx: SourceContext) -> Hit:
+        del ctx
+        calls.append(org_guess)
+        return Hit(source="SEC EDGAR", category="companies", status=Status.NOT_FOUND)
+
+    monkeypatch.setattr(companies_source.rdap, "query", fake_rdap)
+    monkeypatch.setattr(companies_source.companies_house, "query", fake_companies_house)
+    monkeypatch.setattr(companies_source.edgar, "query", fake_edgar)
+
+    await companies_source.query(
+        "example-holdings.co.uk",
+        SourceContext(client=DummyClient(), settings=_settings()),  # type: ignore[arg-type]
+    )
+
+    assert calls == ["example holdings", "example holdings"]
