@@ -334,7 +334,7 @@ def cmd_domain(
         help="Required for --bruteforce; confirms authority to scan the target domain(s).",
     ),
     bruteforce_wordlist: str = typer.Option(
-        "medium", "--bruteforce-wordlist", help="small, medium, or big.",
+        "medium", "--bruteforce-wordlist", help="small (1k), medium (5k), or big (20k).",
     ),
     bruteforce_concurrency: int = typer.Option(
         25, "--bruteforce-concurrency", min=1, max=200, help="Max active DNS bruteforce lookups.",

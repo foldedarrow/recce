@@ -76,7 +76,8 @@ recce domain --file domains.txt --json out.json
 Categories: `ownership`, `network`, `email`, `web`, `subs`, `companies`, `wayback`.
 
 `--bruteforce` sends active DNS queries from a subdomain wordlist and requires
-`--i-am-authorised`. See `docs/CONSENT.md`.
+`--i-am-authorised`. Bundled SecLists-derived wordlists are `small` (1k),
+`medium` (5k), and `big` (20k). See `docs/CONSENT.md`.
 
 ---
 

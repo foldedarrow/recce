@@ -18,3 +18,7 @@ reconnaissance as unauthorised access unless you have permission.
 Use `--i-am-authorised` only when you have authority to perform active
 subdomain discovery against the target. Passive domain profiling does not need
 this flag.
+
+The bundled wordlists are SecLists-derived and contain 1,000 (`small`), 5,000
+(`medium`), or 20,000 (`big`) labels. Larger scans create more DNS traffic and
+should be reserved for cases where the authority and proportionality are clear.

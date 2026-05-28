@@ -119,7 +119,8 @@ recce domain --file domains.txt --json out.json
 ```
 
 Domain profiling is passive by default. Active subdomain bruteforce requires
-`--i-am-authorised`; see [`docs/CONSENT.md`](docs/CONSENT.md).
+`--i-am-authorised`; its bundled SecLists-derived wordlists are `small` (1k),
+`medium` (5k), and `big` (20k). See [`docs/CONSENT.md`](docs/CONSENT.md).
 
 ### Diagnostic
 

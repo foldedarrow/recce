@@ -38,5 +38,8 @@ rows by anyone who does not also rewrite every following hash consistently.
 It does not, by itself, prove that trailing events were not deleted. A sealed
 export or external timestamping step is needed for that stronger guarantee.
 
-Case exports include the selected case's audit events for review. Full database
-chain verification is performed against the local store.
+Case exports include the selected case's audit events for review. Those exports
+are case-filtered slices of the global audit chain, so they are useful for
+reviewing what happened in that case but are not standalone proof that no
+events were omitted before or after the exported slice. Full chain verification
+is performed against the local store.
