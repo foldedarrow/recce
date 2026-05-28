@@ -497,7 +497,7 @@ def _investigations_mode() -> None:
 
     export_base = "".join(c if c.isalnum() else "-" for c in inv["name"].lower())[:40]
     st.subheader("Exports")
-    d1, d2, d3, d4 = st.columns(4)
+    d1, d2, d3 = st.columns(3)
     d1.download_button(
         "Full JSON",
         store.export_json_bytes(inv["id"], redacted=False),
@@ -513,17 +513,32 @@ def _investigations_mode() -> None:
         use_container_width=True,
     )
     d3.download_button(
+        "Full PDF",
+        store.export_pdf_bytes(inv["id"], redacted=False),
+        file_name=f"recce-{export_base}.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+    )
+    d4, d5, d6 = st.columns(3)
+    d4.download_button(
         "Markdown",
         store.export_markdown(inv["id"], redacted=False).encode(),
         file_name=f"recce-{export_base}.md",
         mime="text/markdown",
         use_container_width=True,
     )
-    d4.download_button(
+    d5.download_button(
         "Redacted MD",
         store.export_markdown(inv["id"], redacted=True).encode(),
         file_name=f"recce-{export_base}-redacted.md",
         mime="text/markdown",
+        use_container_width=True,
+    )
+    d6.download_button(
+        "Redacted PDF",
+        store.export_pdf_bytes(inv["id"], redacted=True),
+        file_name=f"recce-{export_base}-redacted.pdf",
+        mime="application/pdf",
         use_container_width=True,
     )
 

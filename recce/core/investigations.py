@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -429,6 +430,86 @@ class InvestigationStore:
         )
         return "\n".join(lines)
 
+    def export_pdf_bytes(self, investigation_id: str, *, redacted: bool = False) -> bytes:
+        payload = self.export_investigation(investigation_id, redacted=redacted)
+        inv = payload["investigation"]
+        runs = payload["runs"]
+        pdf = _PdfDocument()
+
+        pdf.heading(f"Recce Investigation Report: {inv['name']}", level=1)
+        pdf.text(f"Case ref: {inv.get('case_ref') or '-'}")
+        pdf.text(f"Classification: {inv.get('classification') or '-'}")
+        pdf.text(f"Status: {inv.get('status') or '-'}")
+        pdf.text(f"Created: {inv.get('created_at') or '-'}")
+        pdf.text(f"Exported: {payload['exported_at']}")
+        pdf.text(f"Redacted: {'yes' if payload['redacted'] else 'no'}")
+
+        if inv.get("scope_note"):
+            pdf.heading("Scope", level=2)
+            pdf.paragraph(inv["scope_note"])
+
+        total_hits = sum(len(run["report"].get("hits", [])) for run in runs)
+        confirmed_count = sum(
+            len([hit for hit in run["report"].get("hits", []) if hit.get("status") == "found"])
+            for run in runs
+        )
+        pdf.heading("Subject Summary", level=2)
+        pdf.text(f"Runs: {len(runs)}")
+        pdf.text(f"Sources checked: {total_hits}")
+        pdf.text(f"Confirmed findings: {confirmed_count}")
+
+        pdf.heading("Runs", level=2)
+        if not runs:
+            pdf.text("No runs recorded.")
+        for run in runs:
+            report = run["report"]
+            hits = report.get("hits", [])
+            confirmed = [hit for hit in hits if hit.get("status") == "found"]
+            pdf.heading(f"{run['query_type']}: {run['query']}", level=3)
+            pdf.text(f"Run at: {run['created_at']}")
+            pdf.text(f"Recce version: {run['recce_version']}")
+            pdf.text(f"Sources checked: {len(hits)}")
+            pdf.text(f"Confirmed hits: {len(confirmed)}")
+            if confirmed:
+                for hit in confirmed[:12]:
+                    detail = hit.get("summary") or hit.get("error") or hit.get("url") or ""
+                    pdf.bullet(
+                        "{source} ({category}) - {detail}".format(
+                            source=hit.get("source") or "-",
+                            category=hit.get("category") or "-",
+                            detail=detail or "-",
+                        )
+                    )
+                if len(confirmed) > 12:
+                    pdf.text(f"+{len(confirmed) - 12} additional confirmed finding(s) in JSON evidence.")
+
+        pdf.heading("Evidence Appendix", level=2)
+        for run in runs:
+            confirmed = [hit for hit in run["report"].get("hits", []) if hit.get("status") == "found"]
+            if not confirmed:
+                continue
+            pdf.heading(f"{run['query_type']}: {run['query']}", level=3)
+            for hit in confirmed:
+                pdf.text(f"Source: {hit.get('source') or '-'}")
+                pdf.text(f"Category: {hit.get('category') or '-'}")
+                if hit.get("url"):
+                    pdf.paragraph(f"URL: {hit['url']}")
+                if hit.get("summary") or hit.get("error"):
+                    pdf.paragraph(f"Notes: {hit.get('summary') or hit.get('error')}")
+                pdf.rule()
+
+        pdf.heading("Methodology Note", level=2)
+        pdf.paragraph(
+            "This report was generated from a local Recce investigation workspace. "
+            "Results reflect public-source probes at the time each run was recorded. "
+            "Ambiguous, blocked, rate-limited, and missing responses should be reviewed "
+            "in the underlying JSON evidence before being relied on."
+        )
+        pdf.heading("Audit Summary", level=2)
+        pdf.text(f"Audit events included: {len(payload['audit_events'])}")
+        pdf.text("Full event hashes and payloads are preserved in the JSON export.")
+        return pdf.render()
+
     def _last_audit_hash(self) -> str:
         with self._connect() as conn:
             row = conn.execute(
@@ -476,6 +557,125 @@ def _redact_payload(payload: dict[str, Any], subjects: list[str]) -> dict[str, A
 def _md_cell(value: Any) -> str:
     text = "" if value is None else str(value)
     return text.replace("|", "\\|").replace("\n", " ").strip()
+
+
+class _PdfDocument:
+    width = 595
+    height = 842
+    margin = 54
+
+    def __init__(self) -> None:
+        self.pages: list[list[str]] = []
+        self._new_page()
+
+    def heading(self, text: str, *, level: int) -> None:
+        size = 18 if level == 1 else 14 if level == 2 else 11
+        gap = 18 if level == 1 else 14
+        self._ensure_space(gap + size)
+        self._line(text, size=size, bold=True)
+        self.y -= 4
+
+    def text(self, text: str) -> None:
+        for line in self._wrap(text, size=9):
+            self._line(line, size=9)
+
+    def paragraph(self, text: str) -> None:
+        for line in self._wrap(text, size=9):
+            self._line(line, size=9)
+        self.y -= 4
+
+    def bullet(self, text: str) -> None:
+        for index, line in enumerate(self._wrap(text, size=9, prefix_width=12)):
+            prefix = "- " if index == 0 else "  "
+            self._line(f"{prefix}{line}", size=9)
+
+    def rule(self) -> None:
+        self._ensure_space(14)
+        y = self.y
+        self.pages[-1].append(f"0.8 w {self.margin} {y:.2f} m {self.width - self.margin} {y:.2f} l S")
+        self.y -= 10
+
+    def render(self) -> bytes:
+        objects: list[bytes] = []
+        catalog_id = 1
+        pages_id = 2
+        font_regular_id = 3
+        font_bold_id = 4
+        page_ids = []
+        next_id = 5
+        for _page in self.pages:
+            page_ids.append(next_id)
+            next_id += 2
+
+        objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+        kids = " ".join(f"{page_id} 0 R" for page_id in page_ids)
+        objects.append(f"<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>".encode())
+        objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+        objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
+        for page_index, commands in enumerate(self.pages):
+            page_id = page_ids[page_index]
+            content_id = page_id + 1
+            content = "\n".join(commands).encode("latin-1", "replace")
+            objects.append(
+                (
+                    f"<< /Type /Page /Parent {pages_id} 0 R /MediaBox [0 0 {self.width} {self.height}] "
+                    f"/Resources << /Font << /F1 {font_regular_id} 0 R /F2 {font_bold_id} 0 R >> >> "
+                    f"/Contents {content_id} 0 R >>"
+                ).encode()
+            )
+            objects.append(f"<< /Length {len(content)} >>\nstream\n".encode() + content + b"\nendstream")
+
+        out = bytearray(b"%PDF-1.4\n")
+        offsets = [0]
+        for index, obj in enumerate(objects, start=1):
+            offsets.append(len(out))
+            out.extend(f"{index} 0 obj\n".encode())
+            out.extend(obj)
+            out.extend(b"\nendobj\n")
+        xref_at = len(out)
+        out.extend(f"xref\n0 {len(objects) + 1}\n".encode())
+        out.extend(b"0000000000 65535 f \n")
+        for offset in offsets[1:]:
+            out.extend(f"{offset:010d} 00000 n \n".encode())
+        out.extend(
+            (
+                "trailer\n"
+                f"<< /Size {len(objects) + 1} /Root {catalog_id} 0 R >>\n"
+                "startxref\n"
+                f"{xref_at}\n"
+                "%%EOF\n"
+            ).encode()
+        )
+        return bytes(out)
+
+    def _new_page(self) -> None:
+        self.pages.append([])
+        self.y = self.height - self.margin
+        self._line("recce investigation report", size=8, muted=True)
+        self.y -= 12
+
+    def _ensure_space(self, needed: int) -> None:
+        if self.y - needed < self.margin:
+            self._new_page()
+
+    def _line(self, text: str, *, size: int, bold: bool = False, muted: bool = False) -> None:
+        self._ensure_space(size + 6)
+        font = "F2" if bold else "F1"
+        gray = "0.45 g" if muted else "0 g"
+        safe = _pdf_escape(text)
+        self.pages[-1].append(f"BT /{font} {size} Tf {gray} {self.margin} {self.y:.2f} Td ({safe}) Tj ET")
+        self.y -= size + 4
+
+    def _wrap(self, text: str, *, size: int, prefix_width: int = 0) -> list[str]:
+        text = " ".join(str(text).split())
+        available = self.width - (self.margin * 2) - prefix_width
+        chars = max(28, int(available / (size * 0.5)))
+        return textwrap.wrap(text, width=chars, break_long_words=True) or [""]
+
+
+def _pdf_escape(value: str) -> str:
+    text = str(value).encode("latin-1", "replace").decode("latin-1")
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
 def compare_runs(previous_run: dict[str, Any], current_run: dict[str, Any]) -> dict[str, Any]:
