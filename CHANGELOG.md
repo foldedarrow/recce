@@ -16,6 +16,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Provider registry foundation with GUI API Keys page, Recce Pro entitlement stub,
   Pro-gated provider status rows, `recce doctor` provider diagnostics, and
   `--no-providers` / `--skip-provider` lookup flags.
+- HIBP now runs through the provider registry as the first provider-native
+  live adapter.
 - Probe evidence capture for username checks.
 - WMN cache hardening with corrupt-cache fallback and atomic update writes.
 - `recce username --list-categories`.
