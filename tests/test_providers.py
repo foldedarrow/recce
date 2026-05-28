@@ -2,7 +2,7 @@
 import pytest
 
 from recce.config import Settings
-from recce.core.result import Report, Status
+from recce.core.result import Hit, Report, Status
 from recce.providers import (
     append_registry_gate_hits,
     provider_status_rows,
@@ -246,6 +246,7 @@ async def test_hunter_domain_pivots_remain_non_queryable_until_implemented() -> 
         "domain",
         client,  # type: ignore[arg-type]
         _settings(hunter_api_key="hunter-key"),
+        skip_provider_ids={"shodan"},
     )
 
     assert hits == []
@@ -311,3 +312,106 @@ async def test_numverify_provider_can_be_skipped() -> None:
 
     assert hits == []
     assert client.requests == []
+
+
+@pytest.mark.asyncio
+async def test_shodan_provider_returns_not_configured_skip(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.delenv("RECCE_PRO_LICENCE", raising=False)
+
+    hits = await query_registered_providers(
+        "example.com",
+        "domain",
+        DummyClient(None),  # type: ignore[arg-type]
+        _settings(),
+    )
+
+    shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
+    assert len(shodan_hits) == 1
+    assert shodan_hits[0].status is Status.SKIPPED
+    assert "SHODAN_API_KEY" in (shodan_hits[0].summary or "")
+
+
+@pytest.mark.asyncio
+async def test_shodan_provider_is_pro_gated_before_query(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.delenv("RECCE_PRO_LICENCE", raising=False)
+    client = DummyClient(DummyResponse(200, {}))
+
+    hits = await query_registered_providers(
+        "example.com",
+        "domain",
+        client,  # type: ignore[arg-type]
+        _settings(shodan_api_key="shodan-key"),
+    )
+
+    shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
+    assert len(shodan_hits) == 1
+    assert shodan_hits[0].status is Status.SKIPPED
+    assert "Recce Pro entitlement required" in (shodan_hits[0].summary or "")
+    assert client.requests == []
+
+
+@pytest.mark.asyncio
+async def test_shodan_provider_queries_api_when_pro_active(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-pro")
+    payload = {
+        "domain": "example.com",
+        "tags": ["ipv6"],
+        "subdomains": ["www", "mail"],
+        "more": False,
+        "data": [
+            {"subdomain": "www", "type": "A", "value": "93.184.216.34"},
+            {"subdomain": "mail", "type": "MX", "value": "mail.example.com"},
+        ],
+    }
+    client = DummyClient(DummyResponse(200, payload))
+
+    hits = await query_registered_providers(
+        "example.com",
+        "domain",
+        client,  # type: ignore[arg-type]
+        _settings(shodan_api_key="shodan-key"),
+    )
+
+    shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
+    assert len(shodan_hits) == 1
+    assert shodan_hits[0].status is Status.FOUND
+    assert "2 subdomain(s)" in (shodan_hits[0].summary or "")
+    assert shodan_hits[0].extra["provider_id"] == "shodan"
+    assert client.requests[0][0] == "https://api.shodan.io/dns/domain/example.com"
+    assert client.requests[0][1]["params"] == {"key": "shodan-key"}
+
+
+@pytest.mark.asyncio
+async def test_shodan_provider_can_be_skipped(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-pro")
+    client = DummyClient(DummyResponse(200, {}))
+
+    hits = await query_registered_providers(
+        "example.com",
+        "domain",
+        client,  # type: ignore[arg-type]
+        _settings(shodan_api_key="shodan-key"),
+        skip_provider_ids={"shodan"},
+    )
+
+    assert all(hit.source != "Shodan" for hit in hits)
+    assert client.requests == []
+
+
+def test_append_registry_gate_hits_does_not_duplicate_provider_gate(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.delenv("RECCE_PRO_LICENCE", raising=False)
+    report = Report(query="example.com", query_type="domain")
+    report.add(
+        Hit(
+            source="Shodan",
+            category="provider",
+            status=Status.SKIPPED,
+            summary="Recce Pro entitlement required for this provider",
+            extra={"provider_id": "shodan"},
+        )
+    )
+
+    append_registry_gate_hits(report, _settings(shodan_api_key="key"))
+
+    shodan_hits = [hit for hit in report.hits if hit.source == "Shodan"]
+    assert len(shodan_hits) == 1

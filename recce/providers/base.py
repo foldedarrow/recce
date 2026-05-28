@@ -108,8 +108,15 @@ def append_provider_gate_hits(
     if not settings.provider_integrations_enabled:
         return
     skipped = skip_provider_ids or set()
+    existing_provider_ids = {
+        hit.extra.get("provider_id")
+        for hit in report.hits
+        if isinstance(hit.extra, dict) and hit.extra.get("provider_id")
+    }
     for provider in providers:
         if provider.id in skipped:
+            continue
+        if provider.id in existing_provider_ids:
             continue
         if not provider.is_configured(settings):
             continue

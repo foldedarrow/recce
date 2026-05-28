@@ -14,6 +14,7 @@ from .emailrep import EmailRepProvider
 from .hibp import HIBPProvider
 from .hunter import HunterProvider
 from .numverify import NumVerifyProvider
+from .shodan import ShodanProvider
 
 PROVIDERS: tuple[Provider, ...] = (
     Provider(
@@ -30,16 +31,7 @@ PROVIDERS: tuple[Provider, ...] = (
     HunterProvider(),
     NumVerifyProvider(),
     EmailRepProvider(),
-    Provider(
-        id="shodan",
-        name="Shodan",
-        tier="pro",
-        enriches=("domain",),
-        config_keys=("SHODAN_API_KEY",),
-        setting_attrs=("shodan_api_key",),
-        homepage="https://developer.shodan.io/",
-        notes="host and internet-exposure enrichment",
-    ),
+    ShodanProvider(),
     Provider(
         id="virustotal",
         name="VirusTotal",
