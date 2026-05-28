@@ -270,7 +270,7 @@ def cmd_email(
             max_concurrency=settings.max_concurrency,
             proxy=proxy,
         ) as client:
-            r = await search_email(addr, client, settings)
+            r = await search_email(addr, client, settings, skip_provider_ids=skip_provider_ids)
         if deep:
             for hit in await deep_email_probes(
                 addr,

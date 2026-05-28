@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from recce.config import Settings
+from recce.core.http import HttpClient
 from recce.core.result import Hit, Report, Status
 from recce.licensing import has_pro_entitlement
 
@@ -17,6 +18,12 @@ ProviderState = Literal["active", "not_configured", "inactive_pro", "disabled"]
 class ProviderStatus:
     state: ProviderState
     detail: str
+
+
+@dataclass(frozen=True)
+class ProviderContext:
+    settings: Settings
+    client: HttpClient
 
 
 @dataclass(frozen=True)
@@ -64,6 +71,31 @@ class Provider:
             confidence=0.0,
             extra={"provider_id": self.id, "tier": self.tier, "enriches": list(self.enriches)},
         )
+
+    def not_configured_hit(self) -> Hit:
+        keys = ", ".join(self.config_keys)
+        return Hit(
+            source=self.name,
+            category="provider",
+            status=Status.SKIPPED,
+            summary=f"set {keys} to enable this provider",
+            confidence=0.0,
+            extra={"provider_id": self.id, "tier": self.tier},
+        )
+
+    def disabled_hit(self) -> Hit:
+        return Hit(
+            source=self.name,
+            category="provider",
+            status=Status.SKIPPED,
+            summary="provider integrations disabled",
+            confidence=0.0,
+            extra={"provider_id": self.id, "tier": self.tier},
+        )
+
+    async def query(self, target: str, target_type: str, ctx: ProviderContext) -> list[Hit]:
+        del target, target_type, ctx
+        return []
 
 
 def append_provider_gate_hits(

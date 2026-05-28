@@ -15,6 +15,7 @@ import dns.exception
 from ..config import Settings
 from ..core.http import HttpClient
 from ..core.result import Hit, Report, Status
+from ..providers import query_registered_providers
 
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 
@@ -198,65 +199,6 @@ async def _emailrep(email: str, client: HttpClient, settings: Settings) -> Hit:
     )
 
 
-async def _hibp(email: str, client: HttpClient, settings: Settings) -> Hit:
-    started = time.perf_counter()
-    if not settings.provider_integrations_enabled:
-        return Hit(
-            source="Have I Been Pwned",
-            category="breach",
-            status=Status.SKIPPED,
-            summary="provider integrations disabled",
-            elapsed_ms=0,
-        )
-    if not settings.hibp_api_key:
-        return Hit(
-            source="Have I Been Pwned",
-            category="breach",
-            status=Status.SKIPPED,
-            summary="set HIBP_API_KEY in .env to enable breach lookups",
-            elapsed_ms=0,
-        )
-    headers = {
-        "hibp-api-key": settings.hibp_api_key,
-        "User-Agent": "recce-osint",
-    }
-    resp = await client.get(
-        f"https://haveibeenpwned.com/api/v3/breachedaccount/{email}?truncateResponse=false",
-        headers=headers,
-    )
-    elapsed = int((time.perf_counter() - started) * 1000)
-    if resp is None:
-        return Hit(source="Have I Been Pwned", category="breach", status=Status.ERROR,
-                   error="network", elapsed_ms=elapsed)
-    if resp.status_code == 404:
-        return Hit(source="Have I Been Pwned", category="breach", status=Status.NOT_FOUND,
-                   summary="no breaches on file", elapsed_ms=elapsed)
-    if resp.status_code == 401:
-        return Hit(source="Have I Been Pwned", category="breach", status=Status.ERROR,
-                   error="invalid API key", elapsed_ms=elapsed)
-    if resp.status_code != 200:
-        return Hit(source="Have I Been Pwned", category="breach", status=Status.UNKNOWN,
-                   summary=f"HTTP {resp.status_code}", elapsed_ms=elapsed)
-    try:
-        breaches = resp.json()
-    except Exception:
-        return Hit(source="Have I Been Pwned", category="breach", status=Status.UNKNOWN,
-                   summary="bad json", elapsed_ms=elapsed)
-    names = [b.get("Name") or b.get("Title") for b in breaches][:8]
-    summary = f"{len(breaches)} breach(es): " + ", ".join(filter(None, names))
-    if len(breaches) > 8:
-        summary += f", +{len(breaches) - 8} more"
-    return Hit(
-        source="Have I Been Pwned",
-        category="breach",
-        status=Status.FOUND,
-        summary=summary,
-        extra={"breaches": breaches},
-        confidence=0.99,
-        elapsed_ms=elapsed,
-    )
-
-
 async def _hunter(email: str, client: HttpClient, settings: Settings) -> Hit:
     started = time.perf_counter()
     if not settings.provider_integrations_enabled:
@@ -331,7 +273,13 @@ async def _username_pivot(email: str) -> Hit:
     )
 
 
-async def search_email(email: str, client: HttpClient, settings: Settings) -> Report:
+async def search_email(
+    email: str,
+    client: HttpClient,
+    settings: Settings,
+    *,
+    skip_provider_ids: set[str] | None = None,
+) -> Report:
     email = email.strip().lower()
     if not EMAIL_RE.match(email):
         raise ValueError(f"'{email}' doesn't look like a valid email address.")
@@ -341,11 +289,18 @@ async def search_email(email: str, client: HttpClient, settings: Settings) -> Re
         _gravatar(email, client),
         _mx(email),
         _emailrep(email, client, settings),
-        _hibp(email, client, settings),
         _hunter(email, client, settings),
         _username_pivot(email),
     ]
     for hit in await asyncio.gather(*coros):
+        report.add(hit)
+    for hit in await query_registered_providers(
+        email,
+        "email",
+        client,
+        settings,
+        skip_provider_ids=skip_provider_ids,
+    ):
         report.add(hit)
     report.finish()
     return report

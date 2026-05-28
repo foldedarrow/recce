@@ -21,7 +21,7 @@ permissions where the host platform supports POSIX file modes.
 | Provider | Tier | Targets | Environment keys | Status |
 |---|---|---|---|---|
 | Companies House | Free | Domain | `COMPANIES_HOUSE_KEY` | Live in domain module |
-| Have I Been Pwned | Free | Email | `HIBP_API_KEY` | Live in email module |
+| Have I Been Pwned | Free | Email | `HIBP_API_KEY` | Provider-native live query |
 | Hunter.io | Free | Email, Domain | `HUNTER_API_KEY` | Email live; domain planned |
 | NumVerify | Free | Phone | `NUMVERIFY_API_KEY` | Live in phone module |
 | EmailRep | Free | Email | `EMAILREP_API_KEY` | Live; key optional |
@@ -58,6 +58,9 @@ gate rows for the listed provider IDs.
 ## Notes for Next PRs
 
 - Keep provider-specific network code behind the registry contracts.
+- Use HIBP (`recce/providers/hibp.py`) as the first provider-native pattern:
+  metadata in the registry, live HTTP in the provider class, orchestration via
+  `query_registered_providers()`.
 - Free providers should remain usable in the AGPL engine.
 - Pro providers should degrade to skipped rows when keys are configured but no
   entitlement is present.
