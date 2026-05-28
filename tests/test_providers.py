@@ -250,3 +250,64 @@ async def test_hunter_domain_pivots_remain_non_queryable_until_implemented() -> 
 
     assert hits == []
     assert client.requests == []
+
+
+@pytest.mark.asyncio
+async def test_numverify_provider_returns_not_configured_skip() -> None:
+    hits = await query_registered_providers(
+        "+447826916903",
+        "phone",
+        DummyClient(None),  # type: ignore[arg-type]
+        _settings(),
+    )
+
+    assert len(hits) == 1
+    assert hits[0].source == "NumVerify"
+    assert hits[0].status is Status.SKIPPED
+    assert "NUMVERIFY_API_KEY" in (hits[0].summary or "")
+
+
+@pytest.mark.asyncio
+async def test_numverify_provider_queries_api_when_configured() -> None:
+    payload = {
+        "valid": True,
+        "country_name": "United Kingdom",
+        "location": "London",
+        "carrier": "Example Mobile",
+        "line_type": "mobile",
+    }
+    client = DummyClient(DummyResponse(200, payload))
+
+    hits = await query_registered_providers(
+        "+447826916903",
+        "phone",
+        client,  # type: ignore[arg-type]
+        _settings(numverify_api_key="num-key"),
+    )
+
+    assert len(hits) == 1
+    assert hits[0].source == "NumVerify"
+    assert hits[0].status is Status.FOUND
+    assert "Example Mobile" in (hits[0].summary or "")
+    assert client.requests[0][0] == "https://apilayer.net/api/validate"
+    assert client.requests[0][1]["params"] == {
+        "access_key": "num-key",
+        "number": "447826916903",
+        "format": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_numverify_provider_can_be_skipped() -> None:
+    client = DummyClient(DummyResponse(200, {"valid": True}))
+
+    hits = await query_registered_providers(
+        "+447826916903",
+        "phone",
+        client,  # type: ignore[arg-type]
+        _settings(numverify_api_key="num-key"),
+        skip_provider_ids={"numverify"},
+    )
+
+    assert hits == []
+    assert client.requests == []

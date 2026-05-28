@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Phone number lookups: libphonenumber + optional NumVerify."""
+"""Phone number lookups: libphonenumber, provider enrichment, and pivots."""
 
 from __future__ import annotations
 
-import asyncio
 import time
 
 import phonenumbers
@@ -13,6 +12,7 @@ from phonenumbers import timezone as pn_timezone
 from ..config import Settings
 from ..core.http import HttpClient
 from ..core.result import Hit, Report, Status
+from ..providers import query_registered_providers
 
 
 def _parse(phone: str, default_region: str | None = None) -> Hit:
@@ -89,63 +89,6 @@ def _parse(phone: str, default_region: str | None = None) -> Hit:
     )
 
 
-async def _numverify(e164: str, client: HttpClient, settings: Settings) -> Hit:
-    started = time.perf_counter()
-    if not settings.provider_integrations_enabled:
-        return Hit(
-            source="NumVerify",
-            category="carrier",
-            status=Status.SKIPPED,
-            summary="provider integrations disabled",
-            elapsed_ms=0,
-        )
-    if not settings.numverify_api_key:
-        return Hit(
-            source="NumVerify",
-            category="carrier",
-            status=Status.SKIPPED,
-            summary="set NUMVERIFY_API_KEY in .env (free tier: 100/mo)",
-            elapsed_ms=0,
-        )
-    resp = await client.get(
-        "https://apilayer.net/api/validate",
-        params={
-            "access_key": settings.numverify_api_key,
-            "number": e164.lstrip("+"),
-            "format": 1,
-        },
-    )
-    elapsed = int((time.perf_counter() - started) * 1000)
-    if resp is None or resp.status_code != 200:
-        code = "?" if resp is None else resp.status_code
-        return Hit(source="NumVerify", category="carrier", status=Status.UNKNOWN,
-                   summary=f"HTTP {code}", elapsed_ms=elapsed)
-    try:
-        data = resp.json()
-    except Exception:
-        return Hit(source="NumVerify", category="carrier", status=Status.UNKNOWN,
-                   summary="bad json", elapsed_ms=elapsed)
-    if data.get("error"):
-        return Hit(source="NumVerify", category="carrier", status=Status.ERROR,
-                   error=data["error"].get("info", "unknown"), elapsed_ms=elapsed)
-    if not data.get("valid"):
-        return Hit(source="NumVerify", category="carrier", status=Status.NOT_FOUND,
-                   summary="reported as invalid", elapsed_ms=elapsed)
-    parts = []
-    for k in ("country_name", "location", "carrier", "line_type"):
-        if data.get(k):
-            parts.append(f"{k.replace('_', ' ')}: {data[k]}")
-    return Hit(
-        source="NumVerify",
-        category="carrier",
-        status=Status.FOUND,
-        summary=" · ".join(parts),
-        extra=data,
-        confidence=0.9,
-        elapsed_ms=elapsed,
-    )
-
-
 def _pivot_hits(e164: str, intl: str, national: str, region: str) -> list[Hit]:
     """Suggest where to check this number manually. We don't probe these
     automatically — most messaging apps' lookups require an authenticated
@@ -212,6 +155,7 @@ async def search_phone(
     settings: Settings,
     *,
     default_region: str | None = "GB",
+    skip_provider_ids: set[str] | None = None,
 ) -> Report:
     report = Report(query=phone, query_type="phone")
     parsed_hit = _parse(phone, default_region)
@@ -237,10 +181,13 @@ async def search_phone(
     for h in _pivot_hits(e164, intl, national, region):
         report.add(h)
 
-    rest = await asyncio.gather(
-        _numverify(e164, client, settings),
-    )
-    for h in rest:
+    for h in await query_registered_providers(
+        e164,
+        "phone",
+        client,
+        settings,
+        skip_provider_ids=skip_provider_ids,
+    ):
         report.add(h)
     report.finish()
     return report

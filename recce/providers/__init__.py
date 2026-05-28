@@ -13,6 +13,7 @@ from .base import Provider, ProviderContext, ProviderStatus, append_provider_gat
 from .emailrep import EmailRepProvider
 from .hibp import HIBPProvider
 from .hunter import HunterProvider
+from .numverify import NumVerifyProvider
 
 PROVIDERS: tuple[Provider, ...] = (
     Provider(
@@ -27,16 +28,7 @@ PROVIDERS: tuple[Provider, ...] = (
     ),
     HIBPProvider(),
     HunterProvider(),
-    Provider(
-        id="numverify",
-        name="NumVerify",
-        tier="free",
-        enriches=("phone",),
-        config_keys=("NUMVERIFY_API_KEY",),
-        setting_attrs=("numverify_api_key",),
-        homepage="https://numverify.com/",
-        notes="free tier is HTTP-only and limited",
-    ),
+    NumVerifyProvider(),
     EmailRepProvider(),
     Provider(
         id="shodan",
