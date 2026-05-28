@@ -25,6 +25,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - SPDX licence headers added across the Python codebase.
 - Investigation databases are created with `0600` file permissions where the
   host platform supports POSIX modes.
+- Install docs now steer beta users to non-editable GUI installs while the
+  Python 3.13 editable-install console-script issue is tracked separately.
 
 ### Notes
 

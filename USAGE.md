@@ -165,10 +165,22 @@ If you'd rather click than type, recce ships with a Streamlit-based GUI that wra
 ### Install (one-time)
 
 ```bash
+cd ~/Documents/Claude/Projects/recce
+python -m pip install '.[gui]'
+```
+
+Or, with pipx:
+
+```bash
 pipx install '~/Documents/Claude/Projects/recce[gui]' --force
 ```
 
-The `[gui]` extra adds `streamlit` + `pandas` to the recce venv. The CLI keeps working exactly as before.
+Use a normal non-editable install for GUI beta runs. Editable installs are for
+contributors only and are currently tracked in
+[`issue #4`](https://github.com/foldedarrow/recce/issues/4) on Python 3.13.
+
+The `[gui]` extra adds `streamlit` + `pandas`. The CLI keeps working exactly as
+before.
 
 ### Launch (terminal)
 

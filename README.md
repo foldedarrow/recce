@@ -30,25 +30,45 @@ Recce Pro is a separate product.
 
 ## Install
 
-Requires **Python 3.10+** (3.11+ recommended). Recommended is
-[`pipx`](https://pipx.pypa.io) so recce lives in its own venv outside iCloud
-Drive (which can corrupt regular venvs):
+Requires **Python 3.10+** (3.11+ recommended).
+
+For the GUI beta, use a normal non-editable install. Do not use `pip install -e`
+for end-user installs; editable installs are currently tracked in
+[issue #4](https://github.com/foldedarrow/recce/issues/4) because Python 3.13 +
+Hatchling can leave the generated console scripts unable to import `recce`.
+
+### Option A: local venv
+
+```bash
+git clone https://github.com/foldedarrow/recce.git
+cd recce
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install '.[gui]'
+```
+
+Run from that shell afterwards as `recce` or `recce-gui`.
+
+### Option B: pipx
+
+[`pipx`](https://pipx.pypa.io) keeps recce in its own venv outside iCloud Drive
+(which can corrupt regular venvs):
 
 ```bash
 brew install pipx
 pipx ensurepath
 git clone https://github.com/foldedarrow/recce.git
-pipx install ./recce
+pipx install './recce[gui]'
 ```
 
-Run from anywhere afterwards as `recce`. To pull updates:
+Run from anywhere afterwards as `recce` or `recce-gui`. To pull updates:
 
 ```bash
-cd recce && git pull && pipx install . --force
+cd recce && git pull && pipx install '.[gui]' --force
 ```
 
-For the GUI app (`recce-gui` + Mac `.app` bundle), install with the
-`[gui]` extra: see the [GUI app](#gui-app) section below.
+The GUI app (`recce-gui` + Mac `.app` bundle) uses the same `[gui]` extra: see
+the [GUI app](#gui-app) section below.
 
 ### Optional: API keys
 
@@ -157,17 +177,24 @@ Hardening phase before paid GA.
 ## GUI app
 
 recce ships with a Streamlit-based GUI that wraps the same async modules as
-the CLI. Three tabs (Username / Email / Phone), forms for every flag, live
-results, CSV/JSON download buttons.
+the CLI. Username, Email, Phone, Domain, and Investigations modes include forms
+for the relevant flags, live results, and CSV/JSON download buttons.
 
 ### Install
+
+```bash
+cd /path/to/recce
+python -m pip install '.[gui]'
+```
+
+Or, with pipx:
 
 ```bash
 pipx install '/path/to/recce[gui]' --force
 ```
 
-The `[gui]` extra adds `streamlit` and `pandas` to recce's venv. The CLI
-keeps working unchanged.
+The `[gui]` extra adds `streamlit` and `pandas`. The CLI keeps working
+unchanged.
 
 ### Run from the terminal
 
