@@ -87,8 +87,14 @@ $EDITOR .env
 | `NUMVERIFY_API_KEY` | [numverify.com](https://numverify.com) | Free 100 / mo | Phone carrier / location |
 | `EMAILREP_API_KEY` | [emailrep.io](https://emailrep.io) | Free / paid | Higher rate-limit on reputation |
 | `LEAKCHECK_API_KEY` | [leakcheck.io](https://leakcheck.io) | Paid | (planned) extra breach data |
+| `COMPANIES_HOUSE_KEY` | [Companies House](https://developer.company-information.service.gov.uk/) | Free | UK company lookup for domains |
 
 `.env` is also looked up at `~/.config/recce/.env` so you can set keys once globally.
+
+The GUI includes an **API Keys** page that writes provider credentials to the
+user-level `.env` with private file permissions. The provider registry also
+recognises Pro-gated credentials for Shodan, VirusTotal, SecurityTrails, and
+Censys; see [`docs/PROVIDERS.md`](docs/PROVIDERS.md).
 
 ---
 
@@ -135,6 +141,7 @@ recce domain example.com
 recce domain example.com --only network,email,subs
 recce domain example.com --exclude wayback,companies
 recce domain example.com --bruteforce --i-am-authorised
+recce domain example.com --no-providers
 recce domain --file domains.txt --json out.json
 ```
 
@@ -149,6 +156,9 @@ recce doctor       # show API keys, cache state, and network reachability
 recce doctor --no-network
 recce --version
 ```
+
+Lookup commands also accept `--no-providers` to disable optional API provider
+calls, and `--skip-provider provider-id` for registry-level provider skips.
 
 ---
 

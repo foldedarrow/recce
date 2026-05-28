@@ -22,6 +22,7 @@ from .core.output import (
     render_summary_panel,
 )
 from .core.result import Report
+from .licensing import has_pro_entitlement, pro_licence_path
 from .modules.domain import DOMAIN_CATEGORIES, domain_consent_error, search_domain
 from .modules.email import search_email
 from .modules.email_deep import deep_email_probes
@@ -35,6 +36,7 @@ from .modules.username import (
     search_username,
     site_count,
 )
+from .providers import append_registry_gate_hits, provider_status_rows
 
 app = typer.Typer(
     name="recce",
@@ -141,8 +143,16 @@ def cmd_username(
     list_categories: bool = typer.Option(
         False, "--list-categories", help="Print available username categories and exit.",
     ),
+    no_providers: bool = typer.Option(
+        False, "--no-providers", help="Disable optional API provider integrations.",
+    ),
+    skip_provider: str | None = typer.Option(
+        None, "--skip-provider", help="Comma-separated provider IDs to skip.",
+    ),
 ) -> None:
     settings = Settings.load()
+    if no_providers:
+        settings = settings.without_provider_integrations()
     if concurrency:
         settings = Settings(**{**settings.__dict__, "max_concurrency": concurrency})
 
@@ -153,6 +163,7 @@ def cmd_username(
 
     only_set = _parse_csv_set(only)
     excl_set = _parse_csv_set(exclude)
+    skip_provider_ids = _parse_csv_set(skip_provider)
     targets = _read_targets(username, file)
 
     n_sites = site_count(include_nsfw=nsfw)
@@ -184,6 +195,7 @@ def cmd_username(
         raise typer.Exit(2) from e
 
     for r in reports:
+        append_registry_gate_hits(r, settings, skip_provider_ids=skip_provider_ids)
         render_report(r, show_misses=show_misses, show_errors=show_errors)
         render_summary_panel(r)
     _maybe_export(reports, json_out, csv_out)
@@ -226,8 +238,17 @@ def cmd_email(
         "--i-own-these-emails",
         help="Required for --deep; confirms you own or have consent for the email target(s).",
     ),
+    no_providers: bool = typer.Option(
+        False, "--no-providers", help="Disable optional API provider integrations.",
+    ),
+    skip_provider: str | None = typer.Option(
+        None, "--skip-provider", help="Comma-separated provider IDs to skip.",
+    ),
 ) -> None:
     settings = Settings.load()
+    if no_providers:
+        settings = settings.without_provider_integrations()
+    skip_provider_ids = _parse_csv_set(skip_provider)
     targets = _read_targets(email, file)
     if deep and not own_emails:
         console.print(
@@ -270,6 +291,7 @@ def cmd_email(
         raise typer.Exit(2) from e
 
     for r in reports:
+        append_registry_gate_hits(r, settings, skip_provider_ids=skip_provider_ids)
         render_report(r, show_misses=show_misses, show_errors=show_errors)
         render_summary_panel(r)
     _maybe_export(reports, json_out, csv_out)
@@ -290,8 +312,17 @@ def cmd_phone(
     batch_concurrency: int = typer.Option(
         1, "--batch-concurrency", help="How many phone numbers to process at once.",
     ),
+    no_providers: bool = typer.Option(
+        False, "--no-providers", help="Disable optional API provider integrations.",
+    ),
+    skip_provider: str | None = typer.Option(
+        None, "--skip-provider", help="Comma-separated provider IDs to skip.",
+    ),
 ) -> None:
     settings = Settings.load()
+    if no_providers:
+        settings = settings.without_provider_integrations()
+    skip_provider_ids = _parse_csv_set(skip_provider)
     targets = _read_targets(phone, file)
     banner("recce › phone", subtitle=f"{len(targets)} target(s) · default region: {region}")
     _print_key_status(settings, ["numverify_api_key"])
@@ -308,6 +339,7 @@ def cmd_phone(
     reports = asyncio.run(_run_bounded(run_one, targets, batch_concurrency))
 
     for r in reports:
+        append_registry_gate_hits(r, settings, skip_provider_ids=skip_provider_ids)
         render_report(r, show_misses=show_misses, show_errors=show_errors)
         render_summary_panel(r)
     _maybe_export(reports, json_out, csv_out)
@@ -356,8 +388,16 @@ def cmd_domain(
     list_categories: bool = typer.Option(
         False, "--list-categories", help="Print available domain categories and exit.",
     ),
+    no_providers: bool = typer.Option(
+        False, "--no-providers", help="Disable optional API provider integrations.",
+    ),
+    skip_provider: str | None = typer.Option(
+        None, "--skip-provider", help="Comma-separated provider IDs to skip.",
+    ),
 ) -> None:
     settings = Settings.load()
+    if no_providers:
+        settings = settings.without_provider_integrations()
     if list_categories:
         banner("recce › domain categories")
         for name in sorted(DOMAIN_CATEGORIES):
@@ -367,6 +407,7 @@ def cmd_domain(
     targets = _read_targets(domain, file)
     only_set = _parse_csv_set(only)
     excl_set = _parse_csv_set(exclude)
+    skip_provider_ids = _parse_csv_set(skip_provider)
     if bruteforce and not authorised:
         target = targets[0] if len(targets) == 1 else "the target domains"
         console.print(f"[red]error:[/] {domain_consent_error(target)}")
@@ -404,6 +445,7 @@ def cmd_domain(
         raise typer.Exit(2) from e
 
     for r in reports:
+        append_registry_gate_hits(r, settings, skip_provider_ids=skip_provider_ids)
         render_report(r, show_misses=show_misses, show_errors=show_errors)
         render_summary_panel(r)
     _maybe_export(reports, json_out, csv_out)
@@ -452,6 +494,11 @@ def cmd_doctor(
         "EMAILREP_API_KEY": settings.emailrep_api_key,
         "LEAKCHECK_API_KEY": settings.leakcheck_api_key,
         "COMPANIES_HOUSE_KEY": settings.companies_house_key,
+        "SHODAN_API_KEY": settings.shodan_api_key,
+        "VIRUSTOTAL_API_KEY": settings.virustotal_api_key,
+        "SECURITYTRAILS_API_KEY": settings.securitytrails_api_key,
+        "CENSYS_API_ID": settings.censys_api_id,
+        "CENSYS_API_SECRET": settings.censys_api_secret,
     }
     for name, val in keys.items():
         marker = "[green]set[/]" if val else "[dim]unset[/]"
@@ -469,6 +516,16 @@ def cmd_doctor(
         console.print(f"  [dim]WMN cache:[/] {validity}{site_text}  [dim]{cache['path']}[/]")
     else:
         console.print("  [dim]WMN cache:[/] using bundled snapshot")
+    entitlement = "[green]active[/]" if has_pro_entitlement() else "[dim]inactive[/]"
+    console.print(f"\n  [dim]Recce Pro entitlement:[/] {entitlement}  [dim]{pro_licence_path()}[/]")
+    console.print("\n[dim]Providers:[/]")
+    for row in provider_status_rows(settings):
+        tier = "Pro" if row["tier"] == "pro" else "Free"
+        state = _format_provider_state(row["status"])
+        console.print(
+            f"  {state:>18}  {tier:<4}  {row['name']}  "
+            f"[dim]{row['enriches']} · {row['detail']}[/]"
+        )
     if network:
         console.print("\n[dim]Network checks:[/]")
         for name, ok, detail in asyncio.run(_doctor_network(settings, proxy=proxy)):
@@ -489,6 +546,16 @@ def _print_key_status(settings: Settings, keys: list[str]) -> None:
         else:
             line.append(f"[{label} ✗] ", style="red dim")
     console.print(line)
+
+
+def _format_provider_state(state: str) -> str:
+    if state == "active":
+        return "[green]active[/]"
+    if state == "inactive_pro":
+        return "[yellow]pro gated[/]"
+    if state == "disabled":
+        return "[dim]disabled[/]"
+    return "[dim]not configured[/]"
 
 
 async def _run_bounded(fn, items: list[str], limit: int) -> list[Report]:

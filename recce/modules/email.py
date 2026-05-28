@@ -144,6 +144,14 @@ def _identify_provider(mx_host: str) -> str | None:
 
 async def _emailrep(email: str, client: HttpClient, settings: Settings) -> Hit:
     started = time.perf_counter()
+    if not settings.provider_integrations_enabled:
+        return Hit(
+            source="EmailRep",
+            category="reputation",
+            status=Status.SKIPPED,
+            summary="provider integrations disabled",
+            elapsed_ms=0,
+        )
     headers = {"User-Agent": "recce-osint", "Accept": "application/json"}
     if settings.emailrep_api_key:
         headers["Key"] = settings.emailrep_api_key
@@ -192,6 +200,14 @@ async def _emailrep(email: str, client: HttpClient, settings: Settings) -> Hit:
 
 async def _hibp(email: str, client: HttpClient, settings: Settings) -> Hit:
     started = time.perf_counter()
+    if not settings.provider_integrations_enabled:
+        return Hit(
+            source="Have I Been Pwned",
+            category="breach",
+            status=Status.SKIPPED,
+            summary="provider integrations disabled",
+            elapsed_ms=0,
+        )
     if not settings.hibp_api_key:
         return Hit(
             source="Have I Been Pwned",
@@ -243,6 +259,14 @@ async def _hibp(email: str, client: HttpClient, settings: Settings) -> Hit:
 
 async def _hunter(email: str, client: HttpClient, settings: Settings) -> Hit:
     started = time.perf_counter()
+    if not settings.provider_integrations_enabled:
+        return Hit(
+            source="Hunter.io",
+            category="verification",
+            status=Status.SKIPPED,
+            summary="provider integrations disabled",
+            elapsed_ms=0,
+        )
     if not settings.hunter_api_key:
         return Hit(
             source="Hunter.io",
