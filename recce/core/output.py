@@ -147,6 +147,20 @@ def render_summary_panel(report: Report) -> None:
     console.print(Panel(Group(*lines), title="[bold green]Confirmed hits[/]", border_style="green"))
 
 
+def render_domain_summary_card(report: Report) -> None:
+    from recce.modules.domain_summary import build_domain_summary
+
+    rows = build_domain_summary(report)
+    if not rows:
+        return
+    table = Table.grid(padding=(0, 2))
+    table.add_column("Field", style="bold cyan", no_wrap=True)
+    table.add_column("Value", style="white", overflow="fold")
+    for row in rows:
+        table.add_row(row.label, row.value)
+    console.print(Panel(table, title="[bold cyan]Domain summary[/]", border_style="cyan"))
+
+
 def export_json(report: Report, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = report.model_dump(mode="json")

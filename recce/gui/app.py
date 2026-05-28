@@ -22,6 +22,7 @@ from recce.core.investigations import InvestigationStore
 from recce.core.result import Report, Status
 from recce.licensing import has_pro_entitlement, pro_licence_path, write_pro_licence
 from recce.modules.domain import search_domain
+from recce.modules.domain_summary import build_domain_summary
 from recce.modules.email import search_email
 from recce.modules.email_deep import deep_email_probes
 from recce.modules.phone import search_phone
@@ -298,6 +299,18 @@ def render_results(report: Report, *, show_misses: bool, show_errors: bool) -> N
     dc1, dc2 = st.columns(2)
     dc1.download_button("⬇️ CSV", csv, file_name=f"{base}.csv", mime="text/csv", use_container_width=True)
     dc2.download_button("⬇️ JSON", js, file_name=f"{base}.json", mime="application/json", use_container_width=True)
+
+
+def render_domain_summary(report: Report) -> None:
+    rows = build_domain_summary(report)
+    if not rows:
+        return
+    st.subheader("Summary")
+    st.dataframe(
+        pd.DataFrame([{"Field": row.label, "Value": row.value} for row in rows]),
+        hide_index=True,
+        use_container_width=True,
+    )
 
 
 def _elapsed_str(report: Report) -> str:
@@ -825,6 +838,7 @@ def _domain_mode() -> None:
                 return
 
     if "d_report" in st.session_state:
+        render_domain_summary(st.session_state["d_report"])
         render_results(
             st.session_state["d_report"],
             show_misses=st.session_state.get("d_misses", False),
