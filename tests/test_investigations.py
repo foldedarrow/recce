@@ -71,3 +71,31 @@ def test_redacted_export_masks_subject_in_json_and_markdown(tmp_path: Path) -> N
     assert "alice@example.com" not in redacted_md
     assert "[REDACTED:" in redacted_json
     assert "[REDACTED:" in redacted_md
+
+
+def test_domain_run_uses_domain_audit_events(tmp_path: Path) -> None:
+    store = InvestigationStore(tmp_path / "recce.sqlite3")
+    inv = store.create_investigation(name="Domain review")
+    report = Report(query="example.com", query_type="domain")
+    report.add(Hit(source="DNS A", category="network", status=Status.FOUND, summary="93.184.216.34"))
+    report.finish()
+
+    store.record_run(
+        investigation_id=inv["id"],
+        report=report,
+        args={
+            "bruteforce": True,
+            "i_am_authorised": True,
+            "bruteforce_wordlist": "small",
+            "bruteforce_concurrency": 25,
+            "bruteforce_rate": 10,
+        },
+        recce_version="0.4.0",
+        wmn_cache={},
+    )
+
+    events = store.list_audit_events(inv["id"])
+    assert [event["event_type"] for event in events[:2]] == [
+        "domain.bruteforce.run",
+        "domain.run",
+    ]

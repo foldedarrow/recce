@@ -22,6 +22,7 @@ from .core.output import (
     render_summary_panel,
 )
 from .core.result import Report
+from .modules.domain import DOMAIN_CATEGORIES, domain_consent_error, search_domain
 from .modules.email import search_email
 from .modules.email_deep import deep_email_probes
 from .modules.phone import search_phone
@@ -37,7 +38,7 @@ from .modules.username import (
 
 app = typer.Typer(
     name="recce",
-    help="Personal OSINT toolkit — trace usernames, emails, and phone numbers.",
+    help="Personal OSINT toolkit — trace usernames, emails, phone numbers, and domains.",
     add_completion=False,
     no_args_is_help=True,
     rich_markup_mode="rich",
@@ -57,7 +58,7 @@ def _root(
         None, "--version", "-V", callback=_version_callback, is_eager=True, help="Show version and exit."
     ),
 ) -> None:
-    """Personal OSINT toolkit. Run [bold]recce username[/], [bold]recce email[/], or [bold]recce phone[/]."""
+    """Personal OSINT toolkit. Run username, email, phone, or domain lookups."""
 
 
 def _maybe_export(reports: list[Report], json_out: Path | None, csv_out: Path | None) -> None:
@@ -312,6 +313,102 @@ def cmd_phone(
     _maybe_export(reports, json_out, csv_out)
 
 
+@app.command("domain", help="Profile a domain: ownership, network, email, web, subdomains, companies.")
+def cmd_domain(
+    domain: str | None = typer.Argument(None, help="Domain or URL, e.g. 'example.com'."),
+    file: Path | None = typer.Option(
+        None, "--file", "-f", help="File of domains/URLs, one per line.",
+    ),
+    only: str | None = typer.Option(
+        None, "--only", help="Comma-separated domain categories to include.",
+    ),
+    exclude: str | None = typer.Option(
+        None, "--exclude", help="Comma-separated domain categories to skip.",
+    ),
+    bruteforce: bool = typer.Option(
+        False, "--bruteforce", help="Actively resolve common subdomain labels. Requires --i-am-authorised.",
+    ),
+    authorised: bool = typer.Option(
+        False,
+        "--i-am-authorised",
+        help="Required for --bruteforce; confirms authority to scan the target domain(s).",
+    ),
+    bruteforce_wordlist: str = typer.Option(
+        "medium", "--bruteforce-wordlist", help="small, medium, or big.",
+    ),
+    bruteforce_concurrency: int = typer.Option(
+        25, "--bruteforce-concurrency", min=1, max=200, help="Max active DNS bruteforce lookups.",
+    ),
+    bruteforce_rate: int = typer.Option(
+        10, "--bruteforce-rate", min=1, max=100, help="Approximate DNS bruteforce requests per second.",
+    ),
+    validate_subs: bool = typer.Option(
+        True, "--validate-subs/--no-validate-subs", help="Resolve passive subdomains to mark live/historical.",
+    ),
+    show_misses: bool = typer.Option(False, "--show-misses"),
+    show_errors: bool = typer.Option(False, "--show-errors"),
+    json_out: Path | None = typer.Option(None, "--json"),
+    csv_out: Path | None = typer.Option(None, "--csv"),
+    proxy: str | None = typer.Option(None, "--proxy"),
+    batch_concurrency: int = typer.Option(
+        1, "--batch-concurrency", help="How many domains to process at once.",
+    ),
+    list_categories: bool = typer.Option(
+        False, "--list-categories", help="Print available domain categories and exit.",
+    ),
+) -> None:
+    settings = Settings.load()
+    if list_categories:
+        banner("recce › domain categories")
+        for name in sorted(DOMAIN_CATEGORIES):
+            console.print(f"  [bold]{name}[/]")
+        return
+
+    targets = _read_targets(domain, file)
+    only_set = _parse_csv_set(only)
+    excl_set = _parse_csv_set(exclude)
+    if bruteforce and not authorised:
+        target = targets[0] if len(targets) == 1 else "the target domains"
+        console.print(f"[red]error:[/] {domain_consent_error(target)}")
+        raise typer.Exit(2)
+
+    sub = f"{len(targets)} target(s)" + (" · [yellow]bruteforce ON[/]" if bruteforce else "")
+    banner("recce › domain", subtitle=sub)
+    _print_key_status(settings, ["companies_house_key"])
+
+    async def run_one(target: str) -> Report:
+        async with http_client(
+            user_agent=settings.user_agent,
+            timeout=settings.timeout,
+            max_concurrency=settings.max_concurrency,
+            proxy=proxy,
+        ) as client:
+            return await search_domain(
+                target,
+                client,
+                settings,
+                only_categories=only_set,
+                exclude_categories=excl_set,
+                bruteforce=bruteforce,
+                authorised=authorised,
+                bruteforce_wordlist=bruteforce_wordlist,
+                bruteforce_concurrency=bruteforce_concurrency,
+                bruteforce_rate=bruteforce_rate,
+                validate_subs=validate_subs,
+            )
+
+    try:
+        reports = asyncio.run(_run_bounded(run_one, targets, batch_concurrency))
+    except ValueError as e:
+        console.print(f"[red]error:[/] {e}")
+        raise typer.Exit(2) from e
+
+    for r in reports:
+        render_report(r, show_misses=show_misses, show_errors=show_errors)
+        render_summary_panel(r)
+    _maybe_export(reports, json_out, csv_out)
+
+
 @app.command("update", help="Refresh the bundled WhatsMyName site database from upstream.")
 def cmd_update(
     reset_cache: bool = typer.Option(False, "--reset-cache", help="Delete cached WMN data before updating."),
@@ -354,6 +451,7 @@ def cmd_doctor(
         "NUMVERIFY_API_KEY": settings.numverify_api_key,
         "EMAILREP_API_KEY": settings.emailrep_api_key,
         "LEAKCHECK_API_KEY": settings.leakcheck_api_key,
+        "COMPANIES_HOUSE_KEY": settings.companies_house_key,
     }
     for name, val in keys.items():
         marker = "[green]set[/]" if val else "[dim]unset[/]"
@@ -409,6 +507,8 @@ async def _doctor_network(settings: Settings, proxy: str | None = None) -> list[
         ("example.com", "https://example.com"),
         ("WhatsMyName data", WMN_REMOTE),
         ("GitHub API", "https://api.github.com/rate_limit"),
+        ("crt.sh", "https://crt.sh/?q=example.com&output=json"),
+        ("M365 realm", "https://login.microsoftonline.com/getuserrealm.srf?login=anyuser@example.com&xml=1"),
     ]
     out: list[tuple[str, bool, str]] = []
     async with http_client(

@@ -186,9 +186,10 @@ class InvestigationStore:
                 "UPDATE investigations SET updated_at = ? WHERE id = ?",
                 (created_at, investigation_id),
             )
+        event_type = "domain.run" if report.query_type == "domain" else "run.recorded"
         self.append_audit_event(
             investigation_id,
-            "run.recorded",
+            event_type,
             {
                 "run_id": run["id"],
                 "query_type": report.query_type,
@@ -197,6 +198,19 @@ class InvestigationStore:
                 "sources_checked": len(report.hits),
             },
         )
+        if report.query_type == "domain" and args.get("bruteforce"):
+            self.append_audit_event(
+                investigation_id,
+                "domain.bruteforce.run",
+                {
+                    "run_id": run["id"],
+                    "query": report.query,
+                    "wordlist": args.get("bruteforce_wordlist"),
+                    "concurrency": args.get("bruteforce_concurrency"),
+                    "rate": args.get("bruteforce_rate"),
+                    "authorised": args.get("i_am_authorised", False),
+                },
+            )
         return self._decode_run(run)
 
     def list_runs(self, investigation_id: str, *, limit: int = 100) -> list[dict[str, Any]]:

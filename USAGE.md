@@ -1,12 +1,12 @@
 # `recce` usage
 
-Personal OSINT toolkit — trace where a username, email, or phone number appears across the public internet. Repo: https://github.com/foldedarrow/recce.
+Personal OSINT toolkit — trace where a username, email, phone number, or domain appears across the public internet. Repo: https://github.com/foldedarrow/recce.
 
 Two ways to use it: **CLI** (terminal) and **GUI** (Mac app). The GUI is at the bottom of this page.
 
 ## CLI
 
-You have **five commands**. Here's what each one does and how to use it.
+You have **six commands**. Here's what each one does and how to use it.
 
 ---
 
@@ -59,7 +59,28 @@ Output gives you carrier, region, type, plus clickable URLs for **WhatsApp**, **
 
 ---
 
-## 4. `recce update`
+## 4. `recce domain <name>`
+
+Profile a domain or URL. Default mode is passive: ownership/RDAP/whois,
+DNS/network, email infrastructure, M365 realm, web metadata, TLS certificate,
+passive subdomains, company pivots, and Wayback first-seen.
+
+```bash
+recce domain example.com
+recce domain https://www.example.com --only network,email,subs
+recce domain example.com --exclude wayback,companies
+recce domain example.com --bruteforce --i-am-authorised
+recce domain --file domains.txt --json out.json
+```
+
+Categories: `ownership`, `network`, `email`, `web`, `subs`, `companies`, `wayback`.
+
+`--bruteforce` sends active DNS queries from a subdomain wordlist and requires
+`--i-am-authorised`. See `docs/CONSENT.md`.
+
+---
+
+## 5. `recce update`
 
 Refresh the WhatsMyName site database from upstream. Run this every few months — community keeps adding new platforms and fixing detection markers.
 
@@ -70,7 +91,7 @@ recce update --reset-cache
 
 ---
 
-## 5. `recce doctor`
+## 6. `recce doctor`
 
 Sanity check: shows which API keys you have set, total site count, WMN cache status, how many NSFW sites are gated, and lightweight network reachability.
 
@@ -127,6 +148,7 @@ HIBP_API_KEY=...        # Have I Been Pwned breach data — ~$4/mo
 HUNTER_API_KEY=...      # Hunter.io email verification — free 25/mo
 NUMVERIFY_API_KEY=...   # Phone carrier lookup — free 100/mo
 EMAILREP_API_KEY=...    # EmailRep reputation — free / paid
+COMPANIES_HOUSE_KEY=... # Optional UK company lookup for recce domain
 ```
 
 Verify they loaded with `recce doctor`.
@@ -137,7 +159,7 @@ Run `recce <command> --help` for the per-command flag list.
 
 ## GUI (desktop app)
 
-If you'd rather click than type, recce ships with a Streamlit-based GUI that wraps the same async modules the CLI uses. You get one window with three tabs (Username / Email / Phone), forms for every flag, live results, and CSV/JSON download buttons.
+If you'd rather click than type, recce ships with a Streamlit-based GUI that wraps the same async modules the CLI uses. You get one window with Username / Email / Phone / Domain modes, forms for every flag, live results, and CSV/JSON download buttons.
 
 ### Install (one-time)
 
@@ -165,4 +187,5 @@ If you want a real Mac app with a Dock icon and no browser chrome, see the READM
 - **Username tab** — text input, NSFW toggle, category include/exclude filters, run button. Confirmed hits in cards above the full table.
 - **Email tab** — text input, consent-gated deep-mode toggle, deep concurrency/retry controls.
 - **Phone tab** — text input, region selector, results with clickable WhatsApp / Truecaller / Sync.me / Google links.
+- **Domain tab** — domain profile form with passive categories and consent-gated subdomain bruteforce.
 - **Downloads** — every report has CSV and JSON buttons.

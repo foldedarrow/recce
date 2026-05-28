@@ -26,6 +26,7 @@ class Settings:
     numverify_api_key: str | None
     emailrep_api_key: str | None
     leakcheck_api_key: str | None
+    companies_house_key: str | None
     user_agent: str
     timeout: float
     max_concurrency: int
@@ -39,6 +40,7 @@ class Settings:
             numverify_api_key=os.getenv("NUMVERIFY_API_KEY") or None,
             emailrep_api_key=os.getenv("EMAILREP_API_KEY") or None,
             leakcheck_api_key=os.getenv("LEAKCHECK_API_KEY") or None,
+            companies_house_key=os.getenv("COMPANIES_HOUSE_KEY") or None,
             user_agent=os.getenv(
                 "RECCE_USER_AGENT",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
