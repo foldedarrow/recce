@@ -10,7 +10,9 @@ from recce.core.http import HttpClient
 from recce.core.result import Hit, Status
 
 from .base import Provider, ProviderContext, ProviderStatus, append_provider_gate_hits
+from .emailrep import EmailRepProvider
 from .hibp import HIBPProvider
+from .hunter import HunterProvider
 
 PROVIDERS: tuple[Provider, ...] = (
     Provider(
@@ -24,16 +26,7 @@ PROVIDERS: tuple[Provider, ...] = (
         notes="UK company lookup",
     ),
     HIBPProvider(),
-    Provider(
-        id="hunter",
-        name="Hunter.io",
-        tier="free",
-        enriches=("email", "domain"),
-        config_keys=("HUNTER_API_KEY",),
-        setting_attrs=("hunter_api_key",),
-        homepage="https://hunter.io/api",
-        notes="email verification and domain pivots",
-    ),
+    HunterProvider(),
     Provider(
         id="numverify",
         name="NumVerify",
@@ -44,17 +37,7 @@ PROVIDERS: tuple[Provider, ...] = (
         homepage="https://numverify.com/",
         notes="free tier is HTTP-only and limited",
     ),
-    Provider(
-        id="emailrep",
-        name="EmailRep",
-        tier="free",
-        enriches=("email",),
-        config_keys=("EMAILREP_API_KEY",),
-        setting_attrs=("emailrep_api_key",),
-        homepage="https://emailrep.io/",
-        notes="key optional; useful for higher rate limits",
-        key_optional=True,
-    ),
+    EmailRepProvider(),
     Provider(
         id="shodan",
         name="Shodan",
