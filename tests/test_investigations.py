@@ -99,3 +99,96 @@ def test_domain_run_uses_domain_audit_events(tmp_path: Path) -> None:
         "domain.bruteforce.run",
         "domain.run",
     ]
+
+
+def test_compare_latest_runs_for_query_detects_added_removed_and_changed(tmp_path: Path) -> None:
+    store = InvestigationStore(tmp_path / "recce.sqlite3")
+    inv = store.create_investigation(name="Monitoring review")
+
+    first = Report(query="alice", query_type="username")
+    first.add(
+        Hit(
+            source="Example",
+            category="social",
+            status=Status.FOUND,
+            url="https://example.test/alice",
+            summary="old bio",
+        )
+    )
+    first.add(
+        Hit(
+            source="Gone",
+            category="social",
+            status=Status.FOUND,
+            url="https://gone.test/alice",
+            summary="present",
+        )
+    )
+    first.finish()
+    store.record_run(
+        investigation_id=inv["id"],
+        report=first,
+        args={},
+        recce_version="0.4.0",
+        wmn_cache={},
+    )
+
+    second = Report(query="alice", query_type="username")
+    second.add(
+        Hit(
+            source="Example",
+            category="social",
+            status=Status.FOUND,
+            url="https://example.test/alice",
+            summary="new bio",
+        )
+    )
+    second.add(
+        Hit(
+            source="New",
+            category="social",
+            status=Status.FOUND,
+            url="https://new.test/alice",
+            summary="appeared",
+        )
+    )
+    second.add(Hit(source="Miss", category="social", status=Status.NOT_FOUND))
+    second.finish()
+    store.record_run(
+        investigation_id=inv["id"],
+        report=second,
+        args={},
+        recce_version="0.4.0",
+        wmn_cache={},
+    )
+
+    comparison = store.compare_latest_runs_for_query(
+        inv["id"],
+        query_type="username",
+        query="alice",
+    )
+
+    assert comparison is not None
+    assert [hit["source"] for hit in comparison["added"]] == ["New"]
+    assert [hit["source"] for hit in comparison["removed"]] == ["Gone"]
+    assert len(comparison["changed"]) == 1
+    assert comparison["changed"][0]["before"]["summary"] == "old bio"
+    assert comparison["changed"][0]["after"]["summary"] == "new bio"
+    assert comparison["unchanged_count"] == 0
+
+
+def test_compare_latest_runs_for_query_requires_two_snapshots(tmp_path: Path) -> None:
+    store = InvestigationStore(tmp_path / "recce.sqlite3")
+    inv = store.create_investigation(name="Single run")
+    report = Report(query="alice", query_type="username")
+    report.add(Hit(source="Example", status=Status.FOUND, url="https://example.test/alice"))
+    report.finish()
+    store.record_run(
+        investigation_id=inv["id"],
+        report=report,
+        args={},
+        recce_version="0.4.0",
+        wmn_cache={},
+    )
+
+    assert store.compare_latest_runs_for_query(inv["id"], query_type="username", query="alice") is None

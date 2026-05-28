@@ -30,6 +30,14 @@ the status in the "Audit events" expander. The verifier walks `audit_events` in
 SQLite insertion order, checks each `previous_hash`, recalculates the event
 hash, and reports the first mismatch.
 
+## Run Comparison
+
+The Investigations dashboard can re-run a saved query into the same case and
+compare the latest two snapshots for that query. The comparison reports new,
+removed, and changed confirmed evidence. Misses, skipped providers, and
+transient errors remain in the saved run evidence but are excluded from the
+comparison summary to keep monitoring output focused on actionable changes.
+
 ## Threat Model
 
 The hash chain detects edits to historical audit rows and insertion of forged

@@ -226,6 +226,45 @@ class InvestigationStore:
             ).fetchall()
         return [self._decode_run(dict(row)) for row in rows]
 
+    def list_runs_for_query(
+        self,
+        investigation_id: str,
+        *,
+        query_type: str,
+        query: str,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM runs
+                WHERE investigation_id = ?
+                  AND query_type = ?
+                  AND query = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (investigation_id, query_type, query, limit),
+            ).fetchall()
+        return [self._decode_run(dict(row)) for row in rows]
+
+    def compare_latest_runs_for_query(
+        self,
+        investigation_id: str,
+        *,
+        query_type: str,
+        query: str,
+    ) -> dict[str, Any] | None:
+        runs = self.list_runs_for_query(
+            investigation_id,
+            query_type=query_type,
+            query=query,
+            limit=2,
+        )
+        if len(runs) < 2:
+            return None
+        return compare_runs(runs[1], runs[0])
+
     def list_audit_events(self, investigation_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -437,3 +476,74 @@ def _redact_payload(payload: dict[str, Any], subjects: list[str]) -> dict[str, A
 def _md_cell(value: Any) -> str:
     text = "" if value is None else str(value)
     return text.replace("|", "\\|").replace("\n", " ").strip()
+
+
+def compare_runs(previous_run: dict[str, Any], current_run: dict[str, Any]) -> dict[str, Any]:
+    """Diff two saved run snapshots.
+
+    The comparison focuses on found evidence. Misses, skips, and transient errors
+    are preserved in the saved runs but are intentionally noisy for monitoring.
+    """
+    previous_hits = _found_hit_map(previous_run["report"].get("hits", []))
+    current_hits = _found_hit_map(current_run["report"].get("hits", []))
+    previous_keys = set(previous_hits)
+    current_keys = set(current_hits)
+
+    added = [current_hits[key] for key in sorted(current_keys - previous_keys)]
+    removed = [previous_hits[key] for key in sorted(previous_keys - current_keys)]
+    changed = []
+    for key in sorted(previous_keys & current_keys):
+        before = previous_hits[key]
+        after = current_hits[key]
+        if _hit_fingerprint(before) != _hit_fingerprint(after):
+            changed.append({"before": before, "after": after})
+
+    return {
+        "query": current_run["query"],
+        "query_type": current_run["query_type"],
+        "previous_run_id": previous_run["id"],
+        "current_run_id": current_run["id"],
+        "previous_at": previous_run["created_at"],
+        "current_at": current_run["created_at"],
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+        "unchanged_count": len(previous_keys & current_keys) - len(changed),
+    }
+
+
+def _found_hit_map(hits: list[dict[str, Any]]) -> dict[tuple[str, str, str], dict[str, Any]]:
+    out = {}
+    for hit in hits:
+        if hit.get("status") != "found":
+            continue
+        out[_hit_key(hit)] = hit
+    return out
+
+
+def _hit_key(hit: dict[str, Any]) -> tuple[str, str, str]:
+    extra = hit.get("extra") if isinstance(hit.get("extra"), dict) else {}
+    identity = (
+        hit.get("url")
+        or extra.get("profile_url")
+        or extra.get("username")
+        or extra.get("domain")
+        or extra.get("provider_id")
+        or hit.get("summary")
+        or ""
+    )
+    return (str(hit.get("source") or ""), str(hit.get("category") or ""), str(identity))
+
+
+def _hit_fingerprint(hit: dict[str, Any]) -> str:
+    material = {
+        "source": hit.get("source"),
+        "category": hit.get("category"),
+        "status": hit.get("status"),
+        "url": hit.get("url"),
+        "summary": hit.get("summary"),
+        "confidence": hit.get("confidence"),
+        "extra": hit.get("extra"),
+        "error": hit.get("error"),
+    }
+    return json.dumps(material, sort_keys=True, default=str)
