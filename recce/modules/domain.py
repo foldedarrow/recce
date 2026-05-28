@@ -590,7 +590,16 @@ def load_bruteforce_wordlist(name: str) -> tuple[str, ...]:
 async def _company_hits(domain: str, client: HttpClient, settings: Settings) -> list[Hit]:
     org_guess = domain.rsplit(".", 1)[0].replace("-", " ")
     hits: list[Hit] = []
-    if settings.companies_house_key:
+    if not settings.provider_integrations_enabled:
+        hits.append(
+            Hit(
+                source="Companies House",
+                category="companies",
+                status=Status.SKIPPED,
+                summary="provider integrations disabled",
+            )
+        )
+    elif settings.companies_house_key:
         auth = base64.b64encode(f"{settings.companies_house_key}:".encode()).decode()
         resp = await client.get(
             "https://api.company-information.service.gov.uk/search/companies",

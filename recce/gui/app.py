@@ -16,15 +16,17 @@ import pandas as pd
 import streamlit as st
 
 from recce import __version__
-from recce.config import Settings
+from recce.config import Settings, user_env_path, write_user_env
 from recce.core.http import http_client
 from recce.core.investigations import InvestigationStore
 from recce.core.result import Report, Status
+from recce.licensing import has_pro_entitlement, pro_licence_path, write_pro_licence
 from recce.modules.domain import search_domain
 from recce.modules.email import search_email
 from recce.modules.email_deep import deep_email_probes
 from recce.modules.phone import search_phone
 from recce.modules.username import cache_status, category_counts, search_username, site_count
+from recce.providers import append_registry_gate_hits, provider_status_rows
 
 # ---------------------------------------------------------------------------
 # Page
@@ -73,9 +75,10 @@ with st.sidebar:
 
     mode = st.radio(
         "Mode",
-        ["Investigations", "Username", "Email", "Phone", "Domain"],
+        ["Investigations", "API Keys", "Username", "Email", "Phone", "Domain"],
         horizontal=False,
         label_visibility="collapsed",
+        key="mode",
     )
 
     st.divider()
@@ -132,16 +135,13 @@ with st.sidebar:
 
     st.divider()
     st.caption("API keys")
-    keys = [
-        ("HIBP", settings.hibp_api_key, "haveibeenpwned.com/API/Key"),
-        ("Hunter", settings.hunter_api_key, "hunter.io/api"),
-        ("NumVerify", settings.numverify_api_key, "numverify.com"),
-        ("EmailRep", settings.emailrep_api_key, "emailrep.io"),
-        ("Companies House", settings.companies_house_key, "developer.company-information.service.gov.uk"),
-    ]
-    for label, val, url in keys:
-        glyph = ":green[✓]" if val else ":red[✗]"
-        st.markdown(f"{glyph} **{label}** _{url}_")
+    rows = provider_status_rows(settings)
+    active_count = len([row for row in rows if row["status"] == "active"])
+    gated_count = len([row for row in rows if row["status"] == "inactive_pro"])
+    st.markdown(f"**{active_count}** active · **{gated_count}** Pro gated")
+    if st.button("Manage API keys", use_container_width=True):
+        st.session_state["mode"] = "API Keys"
+        st.rerun()
 
     st.divider()
     st.caption("Sites")
@@ -435,6 +435,80 @@ def _investigations_mode() -> None:
         else:
             st.caption("No audit events recorded.")
 
+
+def _api_keys_mode() -> None:
+    st.markdown("## API Keys")
+    st.caption("Manage optional provider keys stored locally for this user account.")
+
+    rows = provider_status_rows(settings)
+    status_df = pd.DataFrame(
+        [
+            {
+                "Provider": row["name"],
+                "Tier": row["tier"].title(),
+                "Enriches": row["enriches"],
+                "Status": row["status"].replace("_", " "),
+                "Detail": row["detail"],
+            }
+            for row in rows
+        ]
+    )
+    st.dataframe(status_df, hide_index=True, use_container_width=True)
+
+    c1, c2 = st.columns(2)
+    c1.metric("User .env", str(user_env_path()))
+    c2.metric("Recce Pro", "Active" if has_pro_entitlement() else "Inactive")
+
+    fields = [
+        ("HIBP_API_KEY", "Have I Been Pwned", settings.hibp_api_key),
+        ("HUNTER_API_KEY", "Hunter.io", settings.hunter_api_key),
+        ("NUMVERIFY_API_KEY", "NumVerify", settings.numverify_api_key),
+        ("EMAILREP_API_KEY", "EmailRep", settings.emailrep_api_key),
+        ("COMPANIES_HOUSE_KEY", "Companies House", settings.companies_house_key),
+        ("SHODAN_API_KEY", "Shodan", settings.shodan_api_key),
+        ("VIRUSTOTAL_API_KEY", "VirusTotal", settings.virustotal_api_key),
+        ("SECURITYTRAILS_API_KEY", "SecurityTrails", settings.securitytrails_api_key),
+        ("CENSYS_API_ID", "Censys API ID", settings.censys_api_id),
+        ("CENSYS_API_SECRET", "Censys API Secret", settings.censys_api_secret),
+    ]
+
+    with st.form("api_keys_form"):
+        st.subheader("Provider credentials")
+        updates: dict[str, str] = {}
+        for env_key, label, current in fields:
+            updates[env_key] = st.text_input(
+                label,
+                value=current or "",
+                type="password",
+                key=f"api_key_{env_key}",
+            ).strip()
+
+        st.subheader("Recce Pro entitlement")
+        licence_value = st.text_input(
+            "Licence token",
+            value="",
+            type="password",
+            placeholder=f"Stored at {pro_licence_path()}",
+            key="api_key_pro_licence",
+        )
+        save = st.form_submit_button("Save", type="primary", use_container_width=True)
+
+    if save:
+        path = write_user_env(updates)
+        if licence_value.strip():
+            write_pro_licence(licence_value)
+        st.success(f"Saved provider settings to {path}")
+        st.rerun()
+
+    with st.expander("Provider notes", expanded=False):
+        st.markdown(
+            "- EmailRep works without a key but benefits from higher rate limits when configured.\n"
+            "- NumVerify's free tier is HTTP-only and limited; recce warns rather than blocking it.\n"
+            "- Shodan, VirusTotal, SecurityTrails, and Censys are wired as Pro-gated providers first; "
+            "their live enrichment calls come next."
+        )
+
+
 def _username_mode() -> None:
     st.markdown("## Username search")
     st.caption("Hunt a username across hundreds of platforms in parallel.")
@@ -480,6 +554,7 @@ def _username_mode() -> None:
 
             try:
                 report = asyncio.run(run())
+                append_registry_gate_hits(report, settings)
                 status.update(label=f"Done — {len(report.found)} hit(s).", state="complete")
                 st.session_state["u_report"] = report
                 record_gui_run(
@@ -569,6 +644,7 @@ def _email_mode() -> None:
 
             try:
                 report = asyncio.run(run())
+                append_registry_gate_hits(report, settings)
                 status.update(label=f"Done — {len(report.found)} hit(s).", state="complete")
                 st.session_state["e_report"] = report
                 record_gui_run(
@@ -628,6 +704,7 @@ def _phone_mode() -> None:
 
             try:
                 report = asyncio.run(run())
+                append_registry_gate_hits(report, settings)
                 status.update(label="Done.", state="complete")
                 st.session_state["p_report"] = report
                 record_gui_run(
@@ -722,6 +799,7 @@ def _domain_mode() -> None:
 
             try:
                 report = asyncio.run(run())
+                append_registry_gate_hits(report, settings)
                 status.update(label=f"Done — {len(report.found)} finding(s).", state="complete")
                 st.session_state["d_report"] = report
                 record_gui_run(
@@ -760,6 +838,8 @@ def _domain_mode() -> None:
 
 if mode == "Investigations":
     _investigations_mode()
+elif mode == "API Keys":
+    _api_keys_mode()
 elif mode == "Username":
     _username_mode()
 elif mode == "Email":

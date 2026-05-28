@@ -70,6 +70,7 @@ recce domain example.com
 recce domain https://www.example.com --only network,email,subs
 recce domain example.com --exclude wayback,companies
 recce domain example.com --bruteforce --i-am-authorised
+recce domain example.com --no-providers
 recce domain --file domains.txt --json out.json
 ```
 
@@ -113,6 +114,8 @@ recce doctor --no-network
 | `--show-errors` | Show probes that errored out (default: hidden) |
 | `--proxy <url>` | Route through an HTTP / HTTPS / SOCKS proxy (e.g. `socks5://127.0.0.1:9050` for Tor) |
 | `--file <path>` | Batch input — one identifier per line, `#` for comments |
+| `--no-providers` | Disable optional API provider integrations |
+| `--skip-provider <ids>` | Skip registry provider IDs such as `shodan,virustotal` |
 | `-h` / `--help` | Show help for a command |
 
 ---
@@ -150,9 +153,16 @@ HUNTER_API_KEY=...      # Hunter.io email verification — free 25/mo
 NUMVERIFY_API_KEY=...   # Phone carrier lookup — free 100/mo
 EMAILREP_API_KEY=...    # EmailRep reputation — free / paid
 COMPANIES_HOUSE_KEY=... # Optional UK company lookup for recce domain
+SHODAN_API_KEY=...      # Pro-gated; query implementation planned
+VIRUSTOTAL_API_KEY=...  # Pro-gated; query implementation planned
+SECURITYTRAILS_API_KEY=...
+CENSYS_API_ID=...
+CENSYS_API_SECRET=...
 ```
 
-Verify they loaded with `recce doctor`.
+Verify they loaded with `recce doctor`. You can also manage these in the GUI's
+API Keys tab. See `docs/PROVIDERS.md` for the provider registry and Recce Pro
+entitlement notes.
 
 Run `recce <command> --help` for the per-command flag list.
 
@@ -197,6 +207,7 @@ If you want a real Mac app with a Dock icon and no browser chrome, see the READM
 ### What's in the GUI
 
 - **Sidebar** — mode selector, API-key status, site count, "Refresh WMN data" button.
+- **API Keys tab** — provider status table and local key storage at `~/.config/recce/.env`.
 - **Username tab** — text input, NSFW toggle, category include/exclude filters, run button. Confirmed hits in cards above the full table.
 - **Email tab** — text input, consent-gated deep-mode toggle, deep concurrency/retry controls.
 - **Phone tab** — text input, region selector, results with clickable WhatsApp / Truecaller / Sync.me / Google links.

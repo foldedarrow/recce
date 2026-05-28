@@ -91,6 +91,14 @@ def _parse(phone: str, default_region: str | None = None) -> Hit:
 
 async def _numverify(e164: str, client: HttpClient, settings: Settings) -> Hit:
     started = time.perf_counter()
+    if not settings.provider_integrations_enabled:
+        return Hit(
+            source="NumVerify",
+            category="carrier",
+            status=Status.SKIPPED,
+            summary="provider integrations disabled",
+            elapsed_ms=0,
+        )
     if not settings.numverify_api_key:
         return Hit(
             source="NumVerify",
