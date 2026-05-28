@@ -23,6 +23,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `--no-providers` / `--skip-provider` lookup flags.
 - HIBP now runs through the provider registry as the first provider-native
   live adapter.
+- EmailRep and Hunter email verification now run through provider-native live
+  adapters.
 - Probe evidence capture for username checks.
 - WMN cache hardening with corrupt-cache fallback and atomic update writes.
 - `recce username --list-categories`.

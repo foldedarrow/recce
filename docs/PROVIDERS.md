@@ -22,9 +22,9 @@ permissions where the host platform supports POSIX file modes.
 |---|---|---|---|---|
 | Companies House | Free | Domain | `COMPANIES_HOUSE_KEY` | Live in domain module |
 | Have I Been Pwned | Free | Email | `HIBP_API_KEY` | Provider-native live query |
-| Hunter.io | Free | Email, Domain | `HUNTER_API_KEY` | Email live; domain planned |
+| Hunter.io | Free | Email | `HUNTER_API_KEY` | Provider-native email query; domain planned |
 | NumVerify | Free | Phone | `NUMVERIFY_API_KEY` | Live in phone module |
-| EmailRep | Free | Email | `EMAILREP_API_KEY` | Live; key optional |
+| EmailRep | Free | Email | `EMAILREP_API_KEY` | Provider-native live query; key optional |
 | Shodan | Pro | Domain | `SHODAN_API_KEY` | Gated, query implementation planned |
 | VirusTotal | Pro | Domain, Email | `VIRUSTOTAL_API_KEY` | Gated, query implementation planned |
 | SecurityTrails | Pro | Domain | `SECURITYTRAILS_API_KEY` | Gated, query implementation planned |
@@ -61,6 +61,8 @@ gate rows for the listed provider IDs.
 - Use HIBP (`recce/providers/hibp.py`) as the first provider-native pattern:
   metadata in the registry, live HTTP in the provider class, orchestration via
   `query_registered_providers()`.
+- EmailRep and Hunter email verification now follow the same provider-native
+  pattern; keep future provider conversions behind those contracts.
 - Free providers should remain usable in the AGPL engine.
 - Pro providers should degrade to skipped rows when keys are configured but no
   entitlement is present.

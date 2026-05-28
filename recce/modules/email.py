@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Email lookups: Gravatar, MX, EmailRep, HIBP, Hunter."""
+"""Email lookups: Gravatar, MX, provider enrichments, and pivots."""
 
 from __future__ import annotations
 
@@ -143,118 +143,6 @@ def _identify_provider(mx_host: str) -> str | None:
     return None
 
 
-async def _emailrep(email: str, client: HttpClient, settings: Settings) -> Hit:
-    started = time.perf_counter()
-    if not settings.provider_integrations_enabled:
-        return Hit(
-            source="EmailRep",
-            category="reputation",
-            status=Status.SKIPPED,
-            summary="provider integrations disabled",
-            elapsed_ms=0,
-        )
-    headers = {"User-Agent": "recce-osint", "Accept": "application/json"}
-    if settings.emailrep_api_key:
-        headers["Key"] = settings.emailrep_api_key
-    resp = await client.get(f"https://emailrep.io/{email}", headers=headers)
-    elapsed = int((time.perf_counter() - started) * 1000)
-    if resp is None:
-        return Hit(source="EmailRep", category="reputation", status=Status.ERROR,
-                   error="network", elapsed_ms=elapsed)
-    if resp.status_code == 429:
-        return Hit(source="EmailRep", category="reputation", status=Status.SKIPPED,
-                   summary="rate-limited (set EMAILREP_API_KEY)", elapsed_ms=elapsed)
-    if resp.status_code != 200:
-        return Hit(source="EmailRep", category="reputation", status=Status.UNKNOWN,
-                   summary=f"HTTP {resp.status_code}", elapsed_ms=elapsed)
-    try:
-        data = resp.json()
-    except Exception:
-        return Hit(source="EmailRep", category="reputation", status=Status.UNKNOWN,
-                   summary="bad json", elapsed_ms=elapsed)
-
-    details = data.get("details", {})
-    profiles: list[str] = details.get("profiles", []) or []
-    rep = data.get("reputation", "unknown")
-    suspicious = data.get("suspicious", False)
-    parts = [f"reputation: {rep}"]
-    if details.get("first_seen") and details["first_seen"] != "never":
-        parts.append(f"first seen {details['first_seen']}")
-    if details.get("data_breach"):
-        parts.append("⚠ in data breaches")
-    if details.get("malicious_activity"):
-        parts.append("⚠ malicious activity")
-    if profiles:
-        parts.append(f"profiles: {', '.join(profiles)}")
-    if suspicious:
-        parts.append("flagged suspicious")
-    return Hit(
-        source="EmailRep",
-        category="reputation",
-        status=Status.FOUND if (profiles or rep != "none") else Status.NOT_FOUND,
-        summary=" · ".join(parts),
-        extra={"profiles": profiles, "reputation": rep, "details": details},
-        confidence=0.8,
-        elapsed_ms=elapsed,
-    )
-
-
-async def _hunter(email: str, client: HttpClient, settings: Settings) -> Hit:
-    started = time.perf_counter()
-    if not settings.provider_integrations_enabled:
-        return Hit(
-            source="Hunter.io",
-            category="verification",
-            status=Status.SKIPPED,
-            summary="provider integrations disabled",
-            elapsed_ms=0,
-        )
-    if not settings.hunter_api_key:
-        return Hit(
-            source="Hunter.io",
-            category="verification",
-            status=Status.SKIPPED,
-            summary="set HUNTER_API_KEY in .env to enable verification",
-            elapsed_ms=0,
-        )
-    resp = await client.get(
-        "https://api.hunter.io/v2/email-verifier",
-        params={"email": email, "api_key": settings.hunter_api_key},
-    )
-    elapsed = int((time.perf_counter() - started) * 1000)
-    if resp is None or resp.status_code != 200:
-        code = "?" if resp is None else resp.status_code
-        return Hit(source="Hunter.io", category="verification", status=Status.UNKNOWN,
-                   summary=f"HTTP {code}", elapsed_ms=elapsed)
-    try:
-        data = resp.json()["data"]
-    except Exception:
-        return Hit(source="Hunter.io", category="verification", status=Status.UNKNOWN,
-                   summary="bad json", elapsed_ms=elapsed)
-    parts = [
-        f"status: {data.get('status', '?')}",
-        f"score: {data.get('score', '?')}",
-    ]
-    if data.get("disposable"):
-        parts.append("⚠ disposable")
-    if data.get("webmail"):
-        parts.append("webmail")
-    if data.get("accept_all"):
-        parts.append("accept-all domain")
-    sources = data.get("sources") or []
-    if sources:
-        parts.append(f"seen on {len(sources)} site(s)")
-    return Hit(
-        source="Hunter.io",
-        category="verification",
-        status=Status.FOUND if data.get("status") in ("valid", "accept_all", "webmail") else Status.NOT_FOUND,
-        summary=" · ".join(parts),
-        extra={"sources": sources, "raw": data},
-        confidence=0.85,
-        elapsed_ms=elapsed,
-    )
-
-
 async def _username_pivot(email: str) -> Hit:
     """The local-part of an email is often used as a username elsewhere.
 
@@ -288,8 +176,6 @@ async def search_email(
     coros = [
         _gravatar(email, client),
         _mx(email),
-        _emailrep(email, client, settings),
-        _hunter(email, client, settings),
         _username_pivot(email),
     ]
     for hit in await asyncio.gather(*coros):

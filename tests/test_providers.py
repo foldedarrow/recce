@@ -95,6 +95,7 @@ async def test_hibp_provider_returns_not_configured_skip() -> None:
         "email",
         DummyClient(None),  # type: ignore[arg-type]
         _settings(),
+        skip_provider_ids={"hunter", "emailrep"},
     )
 
     hibp_hits = [hit for hit in hits if hit.source == "Have I Been Pwned"]
@@ -116,6 +117,7 @@ async def test_hibp_provider_queries_api_when_configured() -> None:
         "email",
         client,  # type: ignore[arg-type]
         _settings(hibp_api_key="test-key"),
+        skip_provider_ids={"hunter", "emailrep"},
     )
 
     hibp_hits = [hit for hit in hits if hit.source == "Have I Been Pwned"]
@@ -134,8 +136,117 @@ async def test_hibp_provider_can_be_skipped() -> None:
         "email",
         client,  # type: ignore[arg-type]
         _settings(hibp_api_key="test-key"),
-        skip_provider_ids={"hibp"},
+        skip_provider_ids={"hibp", "hunter", "emailrep"},
     )
 
     assert all(hit.source != "Have I Been Pwned" for hit in hits)
+    assert client.requests == []
+
+
+@pytest.mark.asyncio
+async def test_emailrep_provider_queries_without_key() -> None:
+    payload = {
+        "reputation": "high",
+        "suspicious": False,
+        "details": {
+            "first_seen": "2020-01-01",
+            "profiles": ["twitter"],
+            "data_breach": False,
+            "malicious_activity": False,
+        },
+    }
+    client = DummyClient(DummyResponse(200, payload))
+
+    hits = await query_registered_providers(
+        "person@example.com",
+        "email",
+        client,  # type: ignore[arg-type]
+        _settings(),
+        skip_provider_ids={"hibp", "hunter"},
+    )
+
+    assert len(hits) == 1
+    assert hits[0].source == "EmailRep"
+    assert hits[0].status is Status.FOUND
+    assert "reputation: high" in (hits[0].summary or "")
+    assert client.requests[0][0] == "https://emailrep.io/person@example.com"
+    assert "Key" not in client.requests[0][1]["headers"]
+
+
+@pytest.mark.asyncio
+async def test_emailrep_provider_sends_key_when_configured() -> None:
+    client = DummyClient(DummyResponse(429, {}))
+
+    await query_registered_providers(
+        "person@example.com",
+        "email",
+        client,  # type: ignore[arg-type]
+        _settings(emailrep_api_key="rep-key"),
+        skip_provider_ids={"hibp", "hunter"},
+    )
+
+    assert client.requests[0][1]["headers"]["Key"] == "rep-key"
+
+
+@pytest.mark.asyncio
+async def test_hunter_provider_returns_not_configured_skip() -> None:
+    hits = await query_registered_providers(
+        "person@example.com",
+        "email",
+        DummyClient(None),  # type: ignore[arg-type]
+        _settings(),
+        skip_provider_ids={"hibp", "emailrep"},
+    )
+
+    assert len(hits) == 1
+    assert hits[0].source == "Hunter.io"
+    assert hits[0].status is Status.SKIPPED
+    assert "HUNTER_API_KEY" in (hits[0].summary or "")
+
+
+@pytest.mark.asyncio
+async def test_hunter_provider_queries_api_when_configured() -> None:
+    payload = {
+        "data": {
+            "status": "valid",
+            "score": 97,
+            "disposable": False,
+            "webmail": True,
+            "accept_all": False,
+            "sources": [{"domain": "example.com"}],
+        }
+    }
+    client = DummyClient(DummyResponse(200, payload))
+
+    hits = await query_registered_providers(
+        "person@example.com",
+        "email",
+        client,  # type: ignore[arg-type]
+        _settings(hunter_api_key="hunter-key"),
+        skip_provider_ids={"hibp", "emailrep"},
+    )
+
+    assert len(hits) == 1
+    assert hits[0].source == "Hunter.io"
+    assert hits[0].status is Status.FOUND
+    assert "score: 97" in (hits[0].summary or "")
+    assert client.requests[0][0] == "https://api.hunter.io/v2/email-verifier"
+    assert client.requests[0][1]["params"] == {
+        "email": "person@example.com",
+        "api_key": "hunter-key",
+    }
+
+
+@pytest.mark.asyncio
+async def test_hunter_domain_pivots_remain_non_queryable_until_implemented() -> None:
+    client = DummyClient(DummyResponse(200, {}))
+
+    hits = await query_registered_providers(
+        "example.com",
+        "domain",
+        client,  # type: ignore[arg-type]
+        _settings(hunter_api_key="hunter-key"),
+    )
+
+    assert hits == []
     assert client.requests == []
