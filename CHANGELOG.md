@@ -10,6 +10,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - Investigations workspace foundation: SQLite store, GUI dashboard, hash-chained audit log, and JSON/Markdown exports.
+- Investigation lifecycle operations for closing, reopening, archiving,
+  unarchiving, and permanently deleting local cases with a tombstone audit event.
 - PDF investigation exports with full and redacted downloads in the GUI.
 - GUI run comparison for investigation snapshots, including re-running a saved
   query and diffing new, removed, and changed confirmed evidence.
@@ -47,6 +49,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   Python 3.13 editable-install console-script issue is tracked separately.
 - Companies House and SEC EDGAR domain lookups now use RDAP registrant
   organisation evidence before falling back to a domain-label company guess.
+- Existing investigation databases migrate `audit_events.investigation_id` from
+  `ON DELETE CASCADE` to `ON DELETE SET NULL` so audit-chain rows survive a
+  permanent case delete.
 
 ### Notes
 

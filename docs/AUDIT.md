@@ -53,3 +53,16 @@ are case-filtered slices of the global audit chain, so they are useful for
 reviewing what happened in that case but are not standalone proof that no events
 were omitted before or after the exported slice. Full chain verification is
 performed against the local store.
+
+## Deletion Tombstones
+
+Permanent case deletion removes the investigation row and its saved run rows.
+Before that delete commits, Recce writes an `investigation.deleted` tombstone
+event with the case ID, name, case reference, deletion time, reason, and deleted
+run count.
+
+Deletion is irreversible from a case-data standpoint: the investigation record,
+run records, and run report JSON are gone. The audit chain deliberately retains
+the tombstone and any earlier audit rows, with their `investigation_id` set to
+`NULL`, so the local store can still prove that the case existed and that a
+delete was recorded without retaining the deleted case evidence.

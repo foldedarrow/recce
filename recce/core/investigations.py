@@ -19,6 +19,8 @@ from uuid import uuid4
 
 from .result import Report
 
+INVESTIGATION_STATUSES = {"open", "closed", "archived"}
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -82,7 +84,7 @@ class InvestigationStore:
 
                 CREATE TABLE IF NOT EXISTS audit_events (
                     id TEXT PRIMARY KEY,
-                    investigation_id TEXT REFERENCES investigations(id) ON DELETE CASCADE,
+                    investigation_id TEXT REFERENCES investigations(id) ON DELETE SET NULL,
                     event_type TEXT NOT NULL,
                     payload_json TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -91,6 +93,41 @@ class InvestigationStore:
                 );
                 """
             )
+            self._migrate_audit_events_set_null(conn)
+
+    def _migrate_audit_events_set_null(self, conn: sqlite3.Connection) -> None:
+        fk_rows = conn.execute("PRAGMA foreign_key_list(audit_events)").fetchall()
+        needs_migration = any(
+            row["table"] == "investigations"
+            and row["from"] == "investigation_id"
+            and str(row["on_delete"]).upper() == "CASCADE"
+            for row in fk_rows
+        )
+        if not needs_migration:
+            return
+        conn.executescript(
+            """
+            ALTER TABLE audit_events RENAME TO audit_events_old;
+
+            CREATE TABLE audit_events (
+                id TEXT PRIMARY KEY,
+                investigation_id TEXT REFERENCES investigations(id) ON DELETE SET NULL,
+                event_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                previous_hash TEXT NOT NULL,
+                event_hash TEXT NOT NULL
+            );
+
+            INSERT INTO audit_events
+            (id, investigation_id, event_type, payload_json, created_at, previous_hash, event_hash)
+            SELECT id, investigation_id, event_type, payload_json, created_at, previous_hash, event_hash
+            FROM audit_events_old
+            ORDER BY rowid ASC;
+
+            DROP TABLE audit_events_old;
+            """
+        )
 
     def create_investigation(
         self,
@@ -125,18 +162,27 @@ class InvestigationStore:
         self.append_audit_event(inv["id"], "investigation.created", inv)
         return inv
 
-    def list_investigations(self) -> list[dict[str, Any]]:
+    def list_investigations(self, include_statuses: set[str] | None = None) -> list[dict[str, Any]]:
+        statuses = {"open"} if include_statuses is None else set(include_statuses)
+        invalid = statuses - INVESTIGATION_STATUSES
+        if invalid:
+            raise ValueError(f"Unknown investigation status: {', '.join(sorted(invalid))}")
+        if not statuses:
+            return []
+        placeholders = ", ".join("?" for _ in statuses)
         with self._connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT i.*,
                        COUNT(r.id) AS run_count,
                        MAX(r.created_at) AS last_run_at
                 FROM investigations i
                 LEFT JOIN runs r ON r.investigation_id = i.id
+                WHERE i.status IN ({placeholders})
                 GROUP BY i.id
                 ORDER BY i.updated_at DESC, i.created_at DESC
-                """
+                """,
+                tuple(sorted(statuses)),
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -147,6 +193,117 @@ class InvestigationStore:
                 (investigation_id,),
             ).fetchone()
         return dict(row) if row else None
+
+    def close_investigation(self, investigation_id: str, *, reason: str = "") -> dict[str, Any]:
+        return self._set_investigation_status(
+            investigation_id,
+            "closed",
+            "investigation.closed",
+            reason=reason,
+        )
+
+    def reopen_investigation(self, investigation_id: str, *, reason: str = "") -> dict[str, Any]:
+        return self._set_investigation_status(
+            investigation_id,
+            "open",
+            "investigation.reopened",
+            reason=reason,
+            require_current="closed",
+        )
+
+    def archive_investigation(self, investigation_id: str, *, reason: str = "") -> dict[str, Any]:
+        return self._set_investigation_status(
+            investigation_id,
+            "archived",
+            "investigation.archived",
+            reason=reason,
+        )
+
+    def unarchive_investigation(self, investigation_id: str, *, reason: str = "") -> dict[str, Any]:
+        return self._set_investigation_status(
+            investigation_id,
+            "open",
+            "investigation.unarchived",
+            reason=reason,
+            require_current="archived",
+        )
+
+    def delete_investigation(self, investigation_id: str, *, reason: str = "") -> dict[str, Any]:
+        deleted_at = utc_now()
+        with self._connect() as conn:
+            inv_row = conn.execute(
+                "SELECT * FROM investigations WHERE id = ?",
+                (investigation_id,),
+            ).fetchone()
+            if inv_row is None:
+                raise ValueError("Investigation does not exist.")
+            inv = dict(inv_row)
+            run_count = conn.execute(
+                "SELECT COUNT(*) FROM runs WHERE investigation_id = ?",
+                (investigation_id,),
+            ).fetchone()[0]
+            tombstone = {
+                "case_id": inv["id"],
+                "name": inv["name"],
+                "case_ref": inv.get("case_ref") or "",
+                "deleted_at": deleted_at,
+                "reason": reason.strip(),
+                "deleted_run_count": int(run_count),
+            }
+            self._append_audit_event(
+                conn,
+                investigation_id,
+                "investigation.deleted",
+                tombstone,
+                created_at=deleted_at,
+            )
+            conn.execute("DELETE FROM runs WHERE investigation_id = ?", (investigation_id,))
+            conn.execute("DELETE FROM investigations WHERE id = ?", (investigation_id,))
+        return tombstone
+
+    def _set_investigation_status(
+        self,
+        investigation_id: str,
+        status: str,
+        event_type: str,
+        *,
+        reason: str = "",
+        require_current: str | None = None,
+    ) -> dict[str, Any]:
+        if status not in INVESTIGATION_STATUSES:
+            raise ValueError(f"Unknown investigation status: {status}")
+        updated_at = utc_now()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM investigations WHERE id = ?",
+                (investigation_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Investigation does not exist.")
+            current = dict(row)
+            if require_current and current["status"] != require_current:
+                raise ValueError(f"Investigation must be {require_current} before this transition.")
+            conn.execute(
+                "UPDATE investigations SET status = ?, updated_at = ? WHERE id = ?",
+                (status, updated_at, investigation_id),
+            )
+            updated_row = conn.execute(
+                "SELECT * FROM investigations WHERE id = ?",
+                (investigation_id,),
+            ).fetchone()
+            updated = dict(updated_row)
+            self._append_audit_event(
+                conn,
+                investigation_id,
+                event_type,
+                {
+                    "case_id": investigation_id,
+                    "from_status": current["status"],
+                    "to_status": status,
+                    "reason": reason.strip(),
+                },
+            )
+        return updated
 
     def record_run(
         self,
@@ -285,34 +442,8 @@ class InvestigationStore:
         event_type: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        created_at = utc_now()
-        payload_json = json.dumps(payload, sort_keys=True, default=str)
-        previous_hash = self._last_audit_hash()
-        # "|" is reserved as a structural delimiter. payload_json is canonical
-        # JSON and is treated as one opaque field in the hash input.
-        event_hash = hashlib.sha256(
-            f"{previous_hash}|{created_at}|{event_type}|{payload_json}".encode()
-        ).hexdigest()
-        event = {
-            "id": str(uuid4()),
-            "investigation_id": investigation_id,
-            "event_type": event_type,
-            "payload_json": payload_json,
-            "created_at": created_at,
-            "previous_hash": previous_hash,
-            "event_hash": event_hash,
-        }
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO audit_events
-                (id, investigation_id, event_type, payload_json, created_at, previous_hash, event_hash)
-                VALUES
-                (:id, :investigation_id, :event_type, :payload_json, :created_at,
-                 :previous_hash, :event_hash)
-                """,
-                event,
-            )
+            event = self._append_audit_event(conn, investigation_id, event_type, payload)
         return self._decode_audit(event)
 
     def verify_audit_chain(self) -> tuple[bool, str]:
@@ -510,9 +641,52 @@ class InvestigationStore:
         pdf.text("Full event hashes and payloads are preserved in the JSON export.")
         return pdf.render()
 
-    def _last_audit_hash(self) -> str:
-        with self._connect() as conn:
+    def _append_audit_event(
+        self,
+        conn: sqlite3.Connection,
+        investigation_id: str | None,
+        event_type: str,
+        payload: dict[str, Any],
+        *,
+        created_at: str | None = None,
+    ) -> dict[str, Any]:
+        event_created_at = created_at or utc_now()
+        payload_json = json.dumps(payload, sort_keys=True, default=str)
+        previous_hash = self._last_audit_hash(conn)
+        # "|" is reserved as a structural delimiter. payload_json is canonical
+        # JSON and is treated as one opaque field in the hash input.
+        event_hash = hashlib.sha256(
+            f"{previous_hash}|{event_created_at}|{event_type}|{payload_json}".encode()
+        ).hexdigest()
+        event = {
+            "id": str(uuid4()),
+            "investigation_id": investigation_id,
+            "event_type": event_type,
+            "payload_json": payload_json,
+            "created_at": event_created_at,
+            "previous_hash": previous_hash,
+            "event_hash": event_hash,
+        }
+        conn.execute(
+            """
+            INSERT INTO audit_events
+            (id, investigation_id, event_type, payload_json, created_at, previous_hash, event_hash)
+            VALUES
+            (:id, :investigation_id, :event_type, :payload_json, :created_at,
+             :previous_hash, :event_hash)
+            """,
+            event,
+        )
+        return event
+
+    def _last_audit_hash(self, conn: sqlite3.Connection | None = None) -> str:
+        if conn is not None:
             row = conn.execute(
+                "SELECT event_hash FROM audit_events ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            return str(row["event_hash"]) if row else ""
+        with self._connect() as owned_conn:
+            row = owned_conn.execute(
                 "SELECT event_hash FROM audit_events ORDER BY rowid DESC LIMIT 1"
             ).fetchone()
         return str(row["event_hash"]) if row else ""
@@ -552,6 +726,10 @@ def _redact_payload(payload: dict[str, Any], subjects: list[str]) -> dict[str, A
         return value
 
     return redact(payload)
+
+
+def delete_confirmation_matches(case_name: str, typed_name: str) -> bool:
+    return bool(case_name) and typed_name.strip() == case_name
 
 
 def _md_cell(value: Any) -> str:

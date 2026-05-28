@@ -8,11 +8,13 @@ from pathlib import Path
 
 import httpx
 import typer
+from rich.table import Table
 from rich.text import Text
 
 from . import __version__
 from .config import Settings
 from .core.http import http_client
+from .core.investigations import INVESTIGATION_STATUSES, InvestigationStore
 from .core.output import (
     banner,
     console,
@@ -47,6 +49,8 @@ app = typer.Typer(
     rich_markup_mode="rich",
     context_settings={"help_option_names": ["-h", "--help"]},
 )
+investigations_app = typer.Typer(help="Manage local GUI investigation cases.", no_args_is_help=True)
+app.add_typer(investigations_app, name="investigations")
 
 
 def _version_callback(value: bool) -> None:
@@ -103,10 +107,101 @@ def _parse_csv_set(raw: str | None) -> set[str] | None:
     return {s for s in values if s} or None
 
 
+def _parse_investigation_statuses(raw: str | None) -> set[str] | None:
+    statuses = _parse_csv_set(raw)
+    if statuses is None:
+        return None
+    invalid = statuses - INVESTIGATION_STATUSES
+    if invalid:
+        raise typer.BadParameter(f"unknown status: {', '.join(sorted(invalid))}")
+    return statuses
+
+
 def _print_categories(*, include_nsfw: bool) -> None:
     counts = category_counts(include_nsfw=include_nsfw)
     for name, count in counts.items():
         console.print(f"  [bold]{name}[/]  [dim]{count}[/]")
+
+
+def _investigation_store() -> InvestigationStore:
+    return InvestigationStore()
+
+
+@investigations_app.command("list", help="List local investigation cases.")
+def cmd_investigations_list(
+    include: str | None = typer.Option(
+        None,
+        "--include",
+        help="Comma-separated extra statuses to include: closed,archived. Default is open only.",
+    ),
+) -> None:
+    include_statuses = _parse_investigation_statuses(include)
+    if include_statuses is not None:
+        include_statuses.add("open")
+    cases = _investigation_store().list_investigations(include_statuses=include_statuses)
+    table = Table("ID", "Name", "Ref", "Status", "Runs", "Updated")
+    for case in cases:
+        table.add_row(
+            case["id"],
+            case["name"],
+            case.get("case_ref") or "-",
+            case.get("status") or "-",
+            str(case.get("run_count") or 0),
+            case.get("updated_at") or "-",
+        )
+    console.print(table)
+
+
+@investigations_app.command("close", help="Mark an investigation closed.")
+def cmd_investigations_close(
+    case_id: str = typer.Argument(..., help="Investigation case ID."),
+    reason: str = typer.Option("", "--reason", help="Reason to record in the audit log."),
+) -> None:
+    case = _investigation_store().close_investigation(case_id, reason=reason)
+    console.print(f"[green]closed[/] {case['id']}  [bold]{case['name']}[/]")
+
+
+@investigations_app.command("archive", help="Archive an investigation.")
+def cmd_investigations_archive(
+    case_id: str = typer.Argument(..., help="Investigation case ID."),
+    reason: str = typer.Option("", "--reason", help="Reason to record in the audit log."),
+) -> None:
+    case = _investigation_store().archive_investigation(case_id, reason=reason)
+    console.print(f"[green]archived[/] {case['id']}  [bold]{case['name']}[/]")
+
+
+@investigations_app.command("reopen", help="Reopen a closed investigation.")
+def cmd_investigations_reopen(
+    case_id: str = typer.Argument(..., help="Investigation case ID."),
+    reason: str = typer.Option("", "--reason", help="Reason to record in the audit log."),
+) -> None:
+    case = _investigation_store().reopen_investigation(case_id, reason=reason)
+    console.print(f"[green]reopened[/] {case['id']}  [bold]{case['name']}[/]")
+
+
+@investigations_app.command("unarchive", help="Unarchive an archived investigation.")
+def cmd_investigations_unarchive(
+    case_id: str = typer.Argument(..., help="Investigation case ID."),
+    reason: str = typer.Option("", "--reason", help="Reason to record in the audit log."),
+) -> None:
+    case = _investigation_store().unarchive_investigation(case_id, reason=reason)
+    console.print(f"[green]unarchived[/] {case['id']}  [bold]{case['name']}[/]")
+
+
+@investigations_app.command("delete", help="Permanently delete an investigation and its runs.")
+def cmd_investigations_delete(
+    case_id: str = typer.Argument(..., help="Investigation case ID."),
+    reason: str = typer.Option("", "--reason", help="Reason to record in the audit tombstone."),
+    yes: bool = typer.Option(False, "--yes", help="Required confirmation for permanent deletion."),
+) -> None:
+    if not yes:
+        console.print("[red]error:[/] delete is permanent; re-run with --yes to confirm.")
+        raise typer.Exit(2)
+    tombstone = _investigation_store().delete_investigation(case_id, reason=reason)
+    console.print(
+        f"[red]deleted[/] {tombstone['case_id']}  [bold]{tombstone['name']}[/] "
+        f"({tombstone['deleted_run_count']} run(s))"
+    )
 
 
 @app.command("username", help="Hunt a username across hundreds of platforms (WhatsMyName + curated list).")
