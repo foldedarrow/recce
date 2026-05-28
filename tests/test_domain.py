@@ -7,11 +7,13 @@ from recce.core.result import Hit, Status
 from recce.modules import domain as domain_module
 from recce.modules.domain import (
     BRUTEFORCE_WORDLIST_COUNTS,
+    DOMAIN_CATEGORIES,
     domain_consent_error,
     load_bruteforce_wordlist,
     normalize_domain,
     search_domain,
 )
+from recce.modules.domain_sources import SourceContext, source_registry
 
 
 class DummyClient:
@@ -50,6 +52,12 @@ def test_bruteforce_wordlists_match_promised_sizes() -> None:
         assert len(labels) == len(set(labels))
 
 
+def test_domain_source_registry_covers_all_categories() -> None:
+    categories = {category for category, _source in source_registry()}
+
+    assert categories == DOMAIN_CATEGORIES
+
+
 @pytest.mark.asyncio
 async def test_domain_bruteforce_requires_authorisation() -> None:
     with pytest.raises(ValueError, match="Active subdomain bruteforce"):
@@ -65,7 +73,8 @@ async def test_domain_bruteforce_requires_authorisation() -> None:
 
 @pytest.mark.asyncio
 async def test_search_domain_filters_categories(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_email(domain: str, client: DummyClient, settings: Settings) -> list[Hit]:
+    async def fake_email(domain: str, ctx: SourceContext) -> list[Hit]:
+        del ctx
         return [
             Hit(
                 source="DNS MX",
@@ -78,13 +87,19 @@ async def test_search_domain_filters_categories(monkeypatch: pytest.MonkeyPatch)
     async def forbidden(*args, **kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("disabled source should not run")
 
-    monkeypatch.setattr(domain_module, "_email_infra_hits", fake_email)
-    monkeypatch.setattr(domain_module, "_ownership_hits", forbidden)
-    monkeypatch.setattr(domain_module, "_network_hits", forbidden)
-    monkeypatch.setattr(domain_module, "_web_hits", forbidden)
-    monkeypatch.setattr(domain_module, "_passive_subdomain_hits", forbidden)
-    monkeypatch.setattr(domain_module, "_company_hits", forbidden)
-    monkeypatch.setattr(domain_module, "_wayback_hits", forbidden)
+    monkeypatch.setattr(
+        domain_module,
+        "source_registry",
+        lambda: [
+            ("ownership", forbidden),
+            ("network", forbidden),
+            ("email", fake_email),
+            ("web", forbidden),
+            ("subs", forbidden),
+            ("companies", forbidden),
+            ("wayback", forbidden),
+        ],
+    )
 
     report = await search_domain(
         "https://www.example.com",
