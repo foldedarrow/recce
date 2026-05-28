@@ -240,6 +240,124 @@ def record_gui_run(report: Report, args: dict[str, Any]) -> None:
     st.toast(f"Saved to case: {inv['name']}")
 
 
+async def rerun_saved_query(run: dict[str, Any]) -> Report:
+    args = run["args"]
+    timeout = float(args.get("timeout", runtime_timeout))
+    max_concurrency = int(args.get("request_concurrency", runtime_concurrency))
+    proxy = runtime_proxy.strip() or None
+    query = run["query"]
+
+    async with http_client(
+        user_agent=settings.user_agent,
+        timeout=timeout,
+        max_concurrency=max_concurrency,
+        proxy=proxy,
+    ) as client:
+        if run["query_type"] == "username":
+            return await search_username(
+                query,
+                client,
+                only_categories=set(args.get("only_categories") or []) or None,
+                exclude_categories=set(args.get("exclude_categories") or []) or None,
+                include_nsfw=bool(args.get("include_nsfw")),
+                show_progress=False,
+            )
+        if run["query_type"] == "email":
+            report = await search_email(query, client, settings)
+        elif run["query_type"] == "phone":
+            report = await search_phone(
+                query,
+                client,
+                settings,
+                default_region=str(args.get("default_region") or "GB"),
+            )
+        elif run["query_type"] == "domain":
+            if args.get("bruteforce") and not args.get("i_am_authorised"):
+                raise ValueError("Saved domain bruteforce run is missing authorisation evidence.")
+            report = await search_domain(
+                query,
+                client,
+                settings,
+                only_categories=set(args.get("only_categories") or []) or None,
+                exclude_categories=set(args.get("exclude_categories") or []) or None,
+                bruteforce=bool(args.get("bruteforce")),
+                authorised=bool(args.get("i_am_authorised")),
+                bruteforce_wordlist=str(args.get("bruteforce_wordlist") or "medium"),
+                bruteforce_concurrency=int(args.get("bruteforce_concurrency") or 25),
+                bruteforce_rate=int(args.get("bruteforce_rate") or 10),
+                validate_subs=bool(args.get("validate_subs", True)),
+            )
+        else:
+            raise ValueError(f"Cannot re-run saved query type: {run['query_type']}")
+
+    if run["query_type"] == "email" and args.get("deep"):
+        if not args.get("ownership_or_consent_confirmed"):
+            raise ValueError("Saved deep email run is missing ownership or consent evidence.")
+        for hit in await deep_email_probes(
+            query,
+            timeout=timeout,
+            max_concurrency=int(args.get("deep_concurrency") or 20),
+            proxy=proxy,
+            retry=bool(args.get("deep_retry", True)),
+            show_progress=False,
+        ):
+            report.add(hit)
+        report.finish()
+    return report
+
+
+def render_run_comparison(comparison: dict[str, Any]) -> None:
+    added = comparison["added"]
+    removed = comparison["removed"]
+    changed = comparison["changed"]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("New", len(added))
+    c2.metric("Gone", len(removed))
+    c3.metric("Changed", len(changed))
+    c4.metric("Unchanged", comparison["unchanged_count"])
+    st.caption(f"{comparison['previous_at']} → {comparison['current_at']}")
+
+    if not added and not removed and not changed:
+        st.success("No confirmed-evidence changes between the latest two snapshots.")
+        return
+
+    rows = []
+    for hit in added:
+        rows.append(_comparison_row("New", hit))
+    for hit in removed:
+        rows.append(_comparison_row("Gone", hit))
+    for item in changed:
+        before = item["before"]
+        after = item["after"]
+        rows.append(
+            {
+                "Change": "Changed",
+                "Source": after.get("source") or before.get("source") or "",
+                "Category": after.get("category") or before.get("category") or "",
+                "URL": after.get("url") or before.get("url") or "",
+                "Before": before.get("summary") or before.get("error") or "",
+                "After": after.get("summary") or after.get("error") or "",
+            }
+        )
+    st.dataframe(
+        pd.DataFrame(rows),
+        column_config={"URL": st.column_config.LinkColumn("URL", display_text=r"open ↗")},
+        hide_index=True,
+        use_container_width=True,
+    )
+
+
+def _comparison_row(change: str, hit: dict[str, Any]) -> dict[str, str]:
+    return {
+        "Change": change,
+        "Source": str(hit.get("source") or ""),
+        "Category": str(hit.get("category") or ""),
+        "URL": str(hit.get("url") or ""),
+        "Before": "" if change == "New" else str(hit.get("summary") or hit.get("error") or ""),
+        "After": str(hit.get("summary") or hit.get("error") or "") if change == "New" else "",
+    }
+
+
 def render_results(report: Report, *, show_misses: bool, show_errors: bool) -> None:
     found = report.found
     errors = report.errors
@@ -428,6 +546,52 @@ def _investigations_mode() -> None:
         st.dataframe(pd.DataFrame(run_rows), hide_index=True, use_container_width=True)
     else:
         st.info("No runs recorded yet. Use Username, Email, or Phone while this case is active.")
+
+    st.subheader("Run comparison")
+    latest_by_query: dict[tuple[str, str], dict[str, Any]] = {}
+    for run in runs:
+        latest_by_query.setdefault((run["query_type"], run["query"]), run)
+    if not latest_by_query:
+        st.info("Run a query in this case to start monitoring changes.")
+    else:
+        labels = {
+            f"{run['query_type']}: {run['query']} · latest {run['created_at']}": run
+            for run in latest_by_query.values()
+        }
+        selected_label = st.selectbox("Saved query", list(labels), key="compare_saved_query")
+        selected_run = labels[selected_label]
+        comparison = store.compare_latest_runs_for_query(
+            inv["id"],
+            query_type=selected_run["query_type"],
+            query=selected_run["query"],
+        )
+        if comparison:
+            render_run_comparison(comparison)
+        else:
+            st.caption("No previous snapshot for this query yet.")
+
+        if st.button("Re-run and compare", type="primary", use_container_width=True):
+            with st.status(f"Re-running **{selected_run['query']}**…", expanded=False) as status:
+                try:
+                    report = asyncio.run(rerun_saved_query(selected_run))
+                    append_registry_gate_hits(report, settings)
+                    store.record_run(
+                        investigation_id=inv["id"],
+                        report=report,
+                        args=selected_run["args"],
+                        recce_version=__version__,
+                        wmn_cache=cache_status(),
+                    )
+                    status.update(label="Comparison snapshot saved.", state="complete")
+                    st.session_state["latest_comparison"] = store.compare_latest_runs_for_query(
+                        inv["id"],
+                        query_type=selected_run["query_type"],
+                        query=selected_run["query"],
+                    )
+                    st.rerun()
+                except Exception as e:
+                    status.update(label=str(e), state="error")
+                    st.error(str(e))
 
     with st.expander("Audit events", expanded=False):
         if audit_ok:
