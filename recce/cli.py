@@ -422,7 +422,7 @@ def cmd_domain(
 
     sub = f"{len(targets)} target(s)" + (" · [yellow]bruteforce ON[/]" if bruteforce else "")
     banner("recce › domain", subtitle=sub)
-    _print_key_status(settings, ["companies_house_key"])
+    _print_key_status(settings, ["companies_house_key", "shodan_api_key"])
 
     async def run_one(target: str) -> Report:
         async with http_client(
@@ -443,6 +443,7 @@ def cmd_domain(
                 bruteforce_concurrency=bruteforce_concurrency,
                 bruteforce_rate=bruteforce_rate,
                 validate_subs=validate_subs,
+                skip_provider_ids=skip_provider_ids,
             )
 
     try:

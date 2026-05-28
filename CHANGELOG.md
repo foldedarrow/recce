@@ -29,6 +29,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - EmailRep and Hunter email verification now run through provider-native live
   adapters.
 - NumVerify now runs through a provider-native live adapter.
+- Shodan now runs through a Recce Pro-gated provider-native live adapter for
+  domain DNS intelligence.
 - Probe evidence capture for username checks.
 - WMN cache hardening with corrupt-cache fallback and atomic update writes.
 - `recce username --list-categories`.

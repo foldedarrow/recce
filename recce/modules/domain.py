@@ -11,6 +11,7 @@ import tldextract
 from ..config import Settings
 from ..core.http import HttpClient
 from ..core.result import Hit, Report, Status
+from ..providers import query_registered_providers
 from .domain_sources import DOMAIN_CATEGORIES, DomainSource, SourceContext, source_registry
 from .domain_sources import bruteforce as bruteforce_source
 
@@ -60,6 +61,7 @@ async def search_domain(
     bruteforce_concurrency: int = 25,
     bruteforce_rate: int = 10,
     validate_subs: bool = True,
+    skip_provider_ids: set[str] | None = None,
 ) -> Report:
     domain = normalize_domain(domain_or_url)
     unknown_only = (only_categories or set()) - DOMAIN_CATEGORIES
@@ -89,6 +91,15 @@ async def search_domain(
             wordlist=bruteforce_wordlist,
             concurrency=bruteforce_concurrency,
             rate=bruteforce_rate,
+        ):
+            report.add(hit)
+    if _enabled("subs", only_categories, exclude_categories):
+        for hit in await query_registered_providers(
+            domain,
+            "domain",
+            client,
+            settings,
+            skip_provider_ids=skip_provider_ids,
         ):
             report.add(hit)
     report.finish()

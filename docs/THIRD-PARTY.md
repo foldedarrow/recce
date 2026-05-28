@@ -15,6 +15,7 @@ Recce's domain module uses free public endpoints and local DNS lookups in v1.
 - Wayback CDX: `web.archive.org/cdx`
 - Companies House: optional user-provided `COMPANIES_HOUSE_KEY`
 - SEC EDGAR: public company search endpoint
+- Shodan: optional Recce Pro-gated user-provided `SHODAN_API_KEY`
 
 ## Bruteforce Labels
 

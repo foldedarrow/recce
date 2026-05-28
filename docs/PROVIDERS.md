@@ -25,7 +25,7 @@ permissions where the host platform supports POSIX file modes.
 | Hunter.io | Free | Email | `HUNTER_API_KEY` | Provider-native email query; domain planned |
 | NumVerify | Free | Phone | `NUMVERIFY_API_KEY` | Provider-native live query |
 | EmailRep | Free | Email | `EMAILREP_API_KEY` | Provider-native live query; key optional |
-| Shodan | Pro | Domain | `SHODAN_API_KEY` | Gated, query implementation planned |
+| Shodan | Pro | Domain | `SHODAN_API_KEY` | Provider-native live query; Recce Pro gated |
 | VirusTotal | Pro | Domain, Email | `VIRUSTOTAL_API_KEY` | Gated, query implementation planned |
 | SecurityTrails | Pro | Domain | `SECURITYTRAILS_API_KEY` | Gated, query implementation planned |
 | Censys | Pro | Domain | `CENSYS_API_ID`, `CENSYS_API_SECRET` | Gated, query implementation planned |
@@ -71,3 +71,5 @@ gate rows for the listed provider IDs.
 - Companies House still lives in the domain source adapter, but company-register
   lookup now uses RDAP registrant organisation evidence before falling back to
   the domain label.
+- Shodan uses the official DNS domain endpoint for domain intelligence. Shodan
+  bills this as one query credit per lookup.
