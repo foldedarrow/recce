@@ -12,6 +12,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Investigations workspace foundation: SQLite store, GUI dashboard, hash-chained audit log, and JSON/Markdown exports.
 - `recce domain`, a new domain profile mode with ownership, DNS/network, email-infrastructure, web-surface, passive subdomain, company, and Wayback sources.
 - Domain tab in the Streamlit GUI with investigation auto-save support.
+- SecLists-derived domain bruteforce wordlists for `small` (1k), `medium` (5k), and `big` (20k).
 - Probe evidence capture for username checks.
 - WMN cache hardening with corrupt-cache fallback and atomic update writes.
 - `recce username --list-categories`.

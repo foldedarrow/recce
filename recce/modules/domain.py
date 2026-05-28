@@ -14,7 +14,9 @@ import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from functools import lru_cache
 from html.parser import HTMLParser
+from importlib import resources
 from typing import Any
 from urllib.parse import urlparse
 
@@ -28,31 +30,12 @@ from ..core.result import Hit, Report, Status
 
 DOMAIN_CATEGORIES = {"ownership", "network", "email", "web", "subs", "companies", "wayback"}
 COMMON_DKIM_SELECTORS = ("default", "google", "selector1", "selector2", "s1", "s2", "mail")
-BRUTEFORCE_WORDLISTS: dict[str, tuple[str, ...]] = {
-    "small": (
-        "www", "mail", "webmail", "smtp", "mx", "ns1", "ns2", "autodiscover", "admin",
-        "portal", "login", "vpn", "remote", "owa", "api", "app", "apps", "dev", "test",
-        "staging", "stage", "beta", "blog", "shop", "store", "support", "help", "docs",
-        "status", "cdn", "static", "assets", "media", "img", "images", "files", "secure",
-        "sso", "idp", "auth", "account", "accounts", "intranet", "extranet", "hr", "careers",
-        "jobs", "partners", "supplier", "vendor", "pay", "payments", "billing", "crm",
-    ),
+BRUTEFORCE_WORDLIST_FILES = {
+    "small": "subdomains-1000.txt",
+    "medium": "subdomains-5000.txt",
+    "big": "subdomains-20000.txt",
 }
-BRUTEFORCE_WORDLISTS["medium"] = BRUTEFORCE_WORDLISTS["small"] + (
-    "m", "mobile", "edge", "origin", "prod", "production", "uat", "qa", "demo", "sandbox",
-    "grafana", "kibana", "prometheus", "monitor", "monitoring", "metrics", "jenkins",
-    "git", "gitlab", "github", "bitbucket", "jira", "confluence", "wiki", "kb", "vpn1",
-    "vpn2", "rdp", "citrix", "adfs", "sts", "exchange", "imap", "pop", "pop3", "ftp",
-    "sftp", "ssh", "db", "database", "mysql", "postgres", "redis", "elastic", "search",
-)
-BRUTEFORCE_WORDLISTS["big"] = BRUTEFORCE_WORDLISTS["medium"] + (
-    "www1", "www2", "mail1", "mail2", "mx1", "mx2", "ns3", "dns", "dns1", "dns2",
-    "office", "office365", "m365", "sharepoint", "teams", "lyncdiscover", "sip",
-    "api-dev", "api-stage", "api-staging", "internal", "legacy", "old", "new", "www-old",
-    "backup", "backups", "bastion", "jump", "gateway", "gw", "firewall", "fw", "waf",
-    "customer", "customers", "client", "clients", "sales", "marketing", "events",
-    "newsletter", "forms", "go", "links", "tracking", "track", "analytics", "bi",
-)
+BRUTEFORCE_WORDLIST_COUNTS = {"small": 1000, "medium": 5000, "big": 20000}
 
 DomainSource = Callable[[str, HttpClient, Settings], Awaitable[list[Hit]]]
 
@@ -107,7 +90,7 @@ async def search_domain(
         raise ValueError(f"unknown domain categories: {unknown}")
     if bruteforce and not authorised:
         raise ValueError(domain_consent_error(domain))
-    if bruteforce_wordlist not in BRUTEFORCE_WORDLISTS:
+    if bruteforce_wordlist not in BRUTEFORCE_WORDLIST_FILES:
         raise ValueError("bruteforce wordlist must be one of: small, medium, big")
 
     report = Report(query=domain, query_type="domain")
@@ -543,7 +526,7 @@ async def _bruteforce_hits(
     concurrency: int,
     rate: int,
 ) -> list[Hit]:
-    labels = BRUTEFORCE_WORDLISTS[wordlist]
+    labels = load_bruteforce_wordlist(wordlist)
     wildcard_label = f"{random.randrange(10**10, 10**11)}-recce-check"
     wildcard_records, _ = await _dns_lookup(f"{wildcard_label}.{domain}", "A")
     if wildcard_records:
@@ -581,6 +564,27 @@ async def _bruteforce_hits(
             confidence=0.75,
         )
     ]
+
+
+@lru_cache(maxsize=3)
+def load_bruteforce_wordlist(name: str) -> tuple[str, ...]:
+    if name not in BRUTEFORCE_WORDLIST_FILES:
+        raise ValueError("bruteforce wordlist must be one of: small, medium, big")
+    raw = (
+        resources.files("recce.data")
+        .joinpath("wordlists")
+        .joinpath(BRUTEFORCE_WORDLIST_FILES[name])
+        .read_text()
+    )
+    labels = tuple(
+        line.strip().lower()
+        for line in raw.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    )
+    expected = BRUTEFORCE_WORDLIST_COUNTS[name]
+    if len(labels) != expected:
+        raise RuntimeError(f"{name} wordlist has {len(labels)} entries; expected {expected}")
+    return labels
 
 
 async def _company_hits(domain: str, client: HttpClient, settings: Settings) -> list[Hit]:

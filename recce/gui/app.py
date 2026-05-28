@@ -676,7 +676,13 @@ def _domain_mode() -> None:
             key="d_bruteforce",
         )
         b1, b2, b3 = st.columns(3)
-        wordlist = b1.selectbox("Wordlist", ["small", "medium", "big"], index=1, key="d_wordlist")
+        wordlist_label = b1.selectbox(
+            "Wordlist",
+            ["small (1k)", "medium (5k)", "big (20k)"],
+            index=1,
+            key="d_wordlist",
+        )
+        wordlist = wordlist_label.split(" ", 1)[0]
         brute_concurrency = b2.number_input("Bruteforce concurrency", min_value=1, max_value=200, value=25, step=1, key="d_brute_concurrency")
         brute_rate = b3.number_input("Bruteforce rate", min_value=1, max_value=100, value=10, step=1, key="d_brute_rate")
         authorised = st.checkbox(

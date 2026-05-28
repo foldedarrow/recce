@@ -5,7 +5,13 @@ import pytest
 from recce.config import Settings
 from recce.core.result import Hit, Status
 from recce.modules import domain as domain_module
-from recce.modules.domain import domain_consent_error, normalize_domain, search_domain
+from recce.modules.domain import (
+    BRUTEFORCE_WORDLIST_COUNTS,
+    domain_consent_error,
+    load_bruteforce_wordlist,
+    normalize_domain,
+    search_domain,
+)
 
 
 class DummyClient:
@@ -29,6 +35,14 @@ def _settings() -> Settings:
 def test_normalize_domain_accepts_urls_and_subdomains() -> None:
     assert normalize_domain("https://www.Example.co.uk/path?q=1") == "example.co.uk"
     assert normalize_domain("mail.example.com") == "example.com"
+
+
+def test_bruteforce_wordlists_match_promised_sizes() -> None:
+    for name, expected in BRUTEFORCE_WORDLIST_COUNTS.items():
+        labels = load_bruteforce_wordlist(name)
+        assert len(labels) == expected
+        assert labels[0] == "www"
+        assert len(labels) == len(set(labels))
 
 
 @pytest.mark.asyncio

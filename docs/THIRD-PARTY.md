@@ -18,6 +18,21 @@ Recce's domain module uses free public endpoints and local DNS lookups in v1.
 
 ## Bruteforce Labels
 
-The bundled active subdomain bruteforce labels are a small curated Recce list
-of common enterprise hostnames. They are not copied from SecLists. Larger
-SecLists-derived wordlists remain a future enhancement if beta users need them.
+The bundled active subdomain bruteforce wordlists are derived from SecLists:
+
+- Source project: `https://github.com/danielmiessler/SecLists`
+- Source files:
+  - `Discovery/DNS/subdomains-top1million-5000.txt`
+  - `Discovery/DNS/subdomains-top1million-20000.txt`
+- Licence: MIT
+- Copyright: Daniel Miessler / SecLists contributors
+- Bundled licence text: `recce/data/wordlists/SECLISTS_LICENSE`
+
+Recce bundles:
+
+- `small`: first 1,000 labels from `subdomains-top1million-5000.txt`
+- `medium`: full 5,000-label `subdomains-top1million-5000.txt`
+- `big`: full 20,000-label `subdomains-top1million-20000.txt`
+
+The lists are bundled so domain bruteforce does not fetch third-party files at
+runtime.
