@@ -15,6 +15,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Domain summary card in CLI and GUI, extracting the key ownership, hosting,
   email, web, subdomain, and social-link facts before the detailed evidence.
 - SecLists-derived domain bruteforce wordlists for `small` (1k), `medium` (5k), and `big` (20k).
+- Domain source adapters split into `recce/modules/domain_sources/` so RDAP,
+  whois, DNS, M365, web/TLS, passive subdomain, company-register, Wayback, and
+  bruteforce logic can be tested and evolved independently.
 - Provider registry foundation with GUI API Keys page, Recce Pro entitlement stub,
   Pro-gated provider status rows, `recce doctor` provider diagnostics, and
   `--no-providers` / `--skip-provider` lookup flags.
