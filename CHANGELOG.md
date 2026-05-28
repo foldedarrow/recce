@@ -10,6 +10,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - Investigations workspace foundation: SQLite store, GUI dashboard, hash-chained audit log, and JSON/Markdown exports.
+- PDF investigation exports with full and redacted downloads in the GUI.
 - GUI run comparison for investigation snapshots, including re-running a saved
   query and diffing new, removed, and changed confirmed evidence.
 - `recce domain`, a new domain profile mode with ownership, DNS/network, email-infrastructure, web-surface, passive subdomain, company, and Wayback sources.

@@ -73,6 +73,44 @@ def test_redacted_export_masks_subject_in_json_and_markdown(tmp_path: Path) -> N
     assert "[REDACTED:" in redacted_md
 
 
+def test_pdf_export_generates_report_and_redacts_subject(tmp_path: Path) -> None:
+    store = InvestigationStore(tmp_path / "recce.sqlite3")
+    inv = store.create_investigation(
+        name="Subject review",
+        case_ref="KYC-2",
+        scope_note="Shareable report test.",
+        classification="Restricted",
+    )
+    report = Report(query="alice@example.com", query_type="email")
+    report.add(
+        Hit(
+            source="Example",
+            category="profile",
+            status=Status.FOUND,
+            summary="alice@example.com profile",
+            url="https://example.test/alice@example.com",
+        )
+    )
+    report.finish()
+    store.record_run(
+        investigation_id=inv["id"],
+        report=report,
+        args={},
+        recce_version="0.4.0",
+        wmn_cache={},
+    )
+
+    full_pdf = store.export_pdf_bytes(inv["id"])
+    redacted_pdf = store.export_pdf_bytes(inv["id"], redacted=True)
+
+    assert full_pdf.startswith(b"%PDF-")
+    assert b"Recce Investigation Report" in full_pdf
+    assert b"alice@example.com" in full_pdf
+    assert redacted_pdf.startswith(b"%PDF-")
+    assert b"alice@example.com" not in redacted_pdf
+    assert b"[REDACTED:" in redacted_pdf
+
+
 def test_domain_run_uses_domain_audit_events(tmp_path: Path) -> None:
     store = InvestigationStore(tmp_path / "recce.sqlite3")
     inv = store.create_investigation(name="Domain review")
