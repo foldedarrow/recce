@@ -64,6 +64,8 @@ Output gives you carrier, region, type, plus clickable URLs for **WhatsApp**, **
 Profile a domain or URL. Default mode is passive: ownership/RDAP/whois,
 DNS/network, email infrastructure, M365 realm, web metadata, TLS certificate,
 passive subdomains, company pivots, and Wayback first-seen.
+Results start with a compact summary card so the key facts are visible before
+the detailed evidence table.
 
 ```bash
 recce domain example.com
@@ -212,4 +214,5 @@ If you want a real Mac app with a Dock icon and no browser chrome, see the READM
 - **Email tab** — text input, consent-gated deep-mode toggle, deep concurrency/retry controls.
 - **Phone tab** — text input, region selector, results with clickable WhatsApp / Truecaller / Sync.me / Google links.
 - **Domain tab** — domain profile form with passive categories and consent-gated subdomain bruteforce.
+- **Domain summary** — top-level domain facts extracted from the detailed evidence.
 - **Downloads** — every report has CSV and JSON buttons.
