@@ -31,6 +31,7 @@ from .modules.email import search_email
 from .modules.email_deep import deep_email_probes
 from .modules.phone import search_phone
 from .modules.username import (
+    DEFAULT_PER_DOMAIN_RATE,
     WMN_REMOTE,
     cache_status,
     category_counts,
@@ -236,6 +237,12 @@ def cmd_username(
     target_concurrency: int = typer.Option(
         1, "--target-concurrency", help="How many input usernames to process at once in batch mode.",
     ),
+    per_domain_rate: float = typer.Option(
+        DEFAULT_PER_DOMAIN_RATE,
+        "--per-domain-rate",
+        min=0.0,
+        help="Max username probes per second to the same domain. Use 0 to disable.",
+    ),
     list_categories: bool = typer.Option(
         False, "--list-categories", help="Print available username categories and exit.",
     ),
@@ -280,6 +287,7 @@ def cmd_username(
                     only_categories=only_set,
                     exclude_categories=excl_set,
                     include_nsfw=nsfw,
+                    per_domain_rate=per_domain_rate,
                 )
 
             return await _run_bounded(run_one, targets, target_concurrency)

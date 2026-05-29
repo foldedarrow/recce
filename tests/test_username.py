@@ -4,7 +4,7 @@ import pytest
 
 from recce.core.result import Status
 from recce.modules import username as username_mod
-from recce.modules.username import _check_site, _classify
+from recce.modules.username import PerDomainThrottle, _check_site, _classify, _throttle_key
 
 
 def test_present_probe_guarded_status_is_unknown() -> None:
@@ -72,6 +72,107 @@ async def test_check_site_records_probe_evidence() -> None:
     assert hit.extra["probe_url"] == "https://example.test/api/alice"
     assert hit.extra["status_code"] == 200
     assert hit.extra["final_url"] == "https://example.test/api/alice"
+
+
+@pytest.mark.asyncio
+async def test_per_domain_throttle_spaces_same_host_requests() -> None:
+    now = 100.0
+    sleeps: list[float] = []
+
+    def monotonic() -> float:
+        return now
+
+    async def sleep(seconds: float) -> None:
+        nonlocal now
+        sleeps.append(seconds)
+        now += seconds
+
+    throttle = PerDomainThrottle(
+        rate_per_second=2.0,
+        jitter_seconds=0.0,
+        sleep=sleep,
+        monotonic=monotonic,
+    )
+
+    await throttle.wait("https://www.example.test/a")
+    await throttle.wait("https://example.test/b")
+    await throttle.wait("https://other.test/a")
+
+    assert sleeps == [0.5]
+
+
+@pytest.mark.asyncio
+async def test_per_domain_throttle_applies_guarded_backoff() -> None:
+    now = 10.0
+    sleeps: list[float] = []
+
+    def monotonic() -> float:
+        return now
+
+    async def sleep(seconds: float) -> None:
+        nonlocal now
+        sleeps.append(seconds)
+        now += seconds
+
+    throttle = PerDomainThrottle(
+        rate_per_second=10.0,
+        guarded_backoff_seconds=3.0,
+        jitter_seconds=0.0,
+        sleep=sleep,
+        monotonic=monotonic,
+    )
+
+    await throttle.wait("https://example.test/a")
+    throttle.backoff("https://example.test/a")
+    await throttle.wait("https://example.test/b")
+
+    assert sleeps == [3.0]
+
+
+@pytest.mark.asyncio
+async def test_check_site_extends_throttle_on_guarded_status() -> None:
+    now = 10.0
+    sleeps: list[float] = []
+
+    def monotonic() -> float:
+        return now
+
+    async def sleep(seconds: float) -> None:
+        nonlocal now
+        sleeps.append(seconds)
+        now += seconds
+
+    class FakeClient:
+        async def get(self, url: str, **kwargs):
+            request = httpx.Request("GET", url)
+            return httpx.Response(429, text="slow down", request=request)
+
+    throttle = PerDomainThrottle(
+        rate_per_second=10.0,
+        guarded_backoff_seconds=3.0,
+        jitter_seconds=0.0,
+        sleep=sleep,
+        monotonic=monotonic,
+    )
+    site = {
+        "name": "Example",
+        "category": "dev",
+        "url": "https://example.test/{u}",
+        "probe": "https://example.test/api/{u}",
+        "method": "present",
+        "marker": "hello {u}",
+    }
+
+    hit = await _check_site(FakeClient(), site, "alice", throttle=throttle)
+    await throttle.wait("https://example.test/next")
+
+    assert hit.status is Status.UNKNOWN
+    assert hit.summary == "HTTP 429"
+    assert sleeps == [3.0]
+
+
+def test_throttle_key_normalizes_www_hostname() -> None:
+    assert _throttle_key("https://www.Example.test/user/alice") == "example.test"
 
 
 def test_corrupt_wmn_cache_falls_back_to_bundled_snapshot(tmp_path, monkeypatch) -> None:

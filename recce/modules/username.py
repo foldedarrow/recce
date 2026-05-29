@@ -28,12 +28,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import re
 import tempfile
 import time
 from importlib import resources
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from rich.progress import (
     BarColumn,
@@ -53,6 +55,69 @@ NSFW_CAT_RE = re.compile(r"\bnsfw\b", re.IGNORECASE)
 CACHE_DIR = Path.home() / ".cache" / "recce"
 CACHED_WMN = CACHE_DIR / "wmn-data.json"
 GUARDED_HTTP_STATUSES = {401, 403, 429}
+DEFAULT_PER_DOMAIN_RATE = 1.5
+DEFAULT_GUARDED_BACKOFF_SECONDS = 3.0
+DEFAULT_THROTTLE_JITTER_SECONDS = 0.25
+
+
+class PerDomainThrottle:
+    """Small per-host token bucket for username probes.
+
+    Recce still relies on the HTTP client's global semaphore for total
+    concurrency. This layer spaces requests to the same host so one domain with
+    several probes cannot be hit in a burst.
+    """
+
+    def __init__(
+        self,
+        *,
+        rate_per_second: float = DEFAULT_PER_DOMAIN_RATE,
+        guarded_backoff_seconds: float = DEFAULT_GUARDED_BACKOFF_SECONDS,
+        jitter_seconds: float = DEFAULT_THROTTLE_JITTER_SECONDS,
+        sleep=asyncio.sleep,
+        monotonic=time.monotonic,
+    ) -> None:
+        self._min_interval = 0.0 if rate_per_second <= 0 else 1.0 / rate_per_second
+        self._guarded_backoff_seconds = max(0.0, guarded_backoff_seconds)
+        self._jitter_seconds = max(0.0, jitter_seconds)
+        self._sleep = sleep
+        self._monotonic = monotonic
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._next_allowed_at: dict[str, float] = {}
+
+    async def wait(self, url: str) -> None:
+        if self._min_interval <= 0:
+            return
+        key = _throttle_key(url)
+        if not key:
+            return
+        lock = self._locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            now = self._monotonic()
+            wait_for = max(0.0, self._next_allowed_at.get(key, now) - now)
+            if wait_for > 0:
+                await self._sleep(wait_for + self._jitter())
+                now = self._monotonic()
+            self._next_allowed_at[key] = max(now, self._next_allowed_at.get(key, now)) + self._min_interval
+
+    def backoff(self, url: str) -> None:
+        key = _throttle_key(url)
+        if not key or self._guarded_backoff_seconds <= 0:
+            return
+        until = self._monotonic() + self._guarded_backoff_seconds + self._jitter()
+        self._next_allowed_at[key] = max(self._next_allowed_at.get(key, 0.0), until)
+
+    def _jitter(self) -> float:
+        if self._jitter_seconds <= 0:
+            return 0.0
+        return random.uniform(0, self._jitter_seconds)
+
+
+def _throttle_key(url: str) -> str:
+    hostname = (urlparse(url).hostname or "").lower().strip(".")
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
+    return hostname
 
 
 def _format(value: str, username: str) -> str:
@@ -283,7 +348,13 @@ def _classify(
 # Probe
 # ---------------------------------------------------------------------------
 
-async def _check_site(client: HttpClient, site: dict[str, Any], username: str) -> Hit:
+async def _check_site(
+    client: HttpClient,
+    site: dict[str, Any],
+    username: str,
+    *,
+    throttle: PerDomainThrottle | None = None,
+) -> Hit:
     if site.get("strip_bad_char"):
         for ch in site["strip_bad_char"]:
             username = username.replace(ch, "")
@@ -296,6 +367,8 @@ async def _check_site(client: HttpClient, site: dict[str, Any], username: str) -
     started = time.perf_counter()
 
     try:
+        if throttle is not None:
+            await throttle.wait(probe_url)
         if method == "wmn_post":
             payload = json.loads(_format(json.dumps(site["post_body"]), username))
             resp = await client.post(probe_url, json=payload, headers=headers,
@@ -334,6 +407,8 @@ async def _check_site(client: HttpClient, site: dict[str, Any], username: str) -
     needs_body = method not in ("status", "redirect_match")
     body = resp.text if needs_body else ""
     location = resp.headers.get("Location", "")
+    if throttle is not None and resp.status_code in GUARDED_HTTP_STATUSES:
+        throttle.backoff(probe_url)
     status, note = _classify(site, resp.status_code, body, username, location=location)
     extra = {
         "method": method,
@@ -370,6 +445,8 @@ async def search_username(
     exclude_categories: set[str] | None = None,
     include_nsfw: bool = False,
     show_progress: bool = True,
+    per_domain_rate: float = DEFAULT_PER_DOMAIN_RATE,
+    guarded_backoff_seconds: float = DEFAULT_GUARDED_BACKOFF_SECONDS,
 ) -> Report:
     if not USERNAME_RE.match(username):
         raise ValueError(
@@ -383,9 +460,13 @@ async def search_username(
         sites = [s for s in sites if s.get("category", "general") not in exclude_categories]
 
     report = Report(query=username, query_type="username")
+    throttle = PerDomainThrottle(
+        rate_per_second=per_domain_rate,
+        guarded_backoff_seconds=guarded_backoff_seconds,
+    )
 
     if not show_progress:
-        results = await asyncio.gather(*(_check_site(client, s, username) for s in sites))
+        results = await asyncio.gather(*(_check_site(client, s, username, throttle=throttle) for s in sites))
         for r in results:
             report.add(r)
         report.finish()
@@ -406,7 +487,7 @@ async def search_username(
         )
 
         async def runner(site: dict[str, Any]) -> Hit:
-            hit = await _check_site(client, site, username)
+            hit = await _check_site(client, site, username, throttle=throttle)
             progress.advance(task)
             return hit
 

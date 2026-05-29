@@ -21,11 +21,15 @@ recce username foldedarrow --only dev,social            # restrict categories
 recce username foldedarrow --exclude gaming             # skip categories
 recce username foldedarrow --nsfw                       # include adult sites (off by default)
 recce username --file handles.txt --target-concurrency 2 # batch: one handle per line
+recce username foldedarrow --per-domain-rate 1.5        # throttle probes to each domain
 recce username foldedarrow --csv hits.csv               # export CSV
 recce username foldedarrow --show-misses                # show every site, not just hits
 ```
 
 **Categories** include: `dev`, `social`, `video`, `audio`, `art`, `gaming`, `fandom`, `blog`, `creator`, `business`, `fitness`, `civic`, `messaging`, `web3`, plus more from WMN.
+
+Username probes use global concurrency plus a per-domain throttle. The default
+rate is conservative; pass `--per-domain-rate 0` only for trusted local tests.
 
 ---
 

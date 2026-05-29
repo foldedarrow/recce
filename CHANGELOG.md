@@ -33,6 +33,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - NumVerify now runs through a provider-native live adapter.
 - Shodan now runs through a Recce Pro-gated provider-native live adapter for
   domain DNS intelligence.
+- Username probes now use per-domain throttling with guarded-status backoff to
+  avoid bursty traffic against repeated hosts.
 - Probe evidence capture for username checks.
 - WMN cache hardening with corrupt-cache fallback and atomic update writes.
 - `recce username --list-categories`.
@@ -52,6 +54,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Existing investigation databases migrate `audit_events.investigation_id` from
   `ON DELETE CASCADE` to `ON DELETE SET NULL` so audit-chain rows survive a
   permanent case delete.
+- The default User-Agent now identifies Recce honestly instead of impersonating
+  a browser. Override with `RECCE_USER_AGENT` when needed.
 
 ### Notes
 

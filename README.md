@@ -23,7 +23,7 @@ Recce Pro is a separate product.
 - **Domain profiles** — a top-level summary card plus ownership, DNS, ASN, email infrastructure, Microsoft 365 realm fingerprinting, web metadata, TLS certificate details, passive subdomain discovery, Wayback first-seen, and company-register pivots.
 - **Batch mode** — pass `--file targets.txt` to any subcommand to run a list of identifiers in one go.
 - **Output** — Rich terminal tables, optional `--json` export, `--csv` export of all hits across all targets, `--show-misses` and `--show-errors` flags.
-- **Network** — concurrent retrying HTTP/2 client, browser User-Agent, configurable concurrency, optional `--proxy` (HTTP/HTTPS/SOCKS).
+- **Network** — concurrent retrying HTTP/2 client, honest default User-Agent, configurable concurrency, per-domain username throttling, optional `--proxy` (HTTP/HTTPS/SOCKS).
 - Works **fully offline-of-keys** — every paid source degrades gracefully to `skipped`.
 
 ---
@@ -111,9 +111,14 @@ recce username some_handle --only dev,social
 recce username some_handle --exclude gaming,fandom --json out.json
 recce username some_handle --show-misses        # print everything, not just hits
 recce username some_handle -c 60                # crank parallelism
+recce username some_handle --per-domain-rate 1.5
 ```
 
 Categories: `dev`, `social`, `video`, `audio`, `art`, `gaming`, `fandom`, `blog`, `creator`, `business`, `fitness`, `civic`, `messaging`, `web3`.
+
+Username mode spaces requests to the same domain by default. Tune with
+`--per-domain-rate`, or pass `0` to disable the per-domain guard for a trusted
+local test.
 
 ### Email
 
