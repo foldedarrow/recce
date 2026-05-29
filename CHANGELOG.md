@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - Unreleased
+## [0.5.0] - 2026-05-29
 
 ### Added
 
@@ -47,8 +47,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - SPDX licence headers added across the Python codebase.
 - Investigation databases are created with `0600` file permissions where the
   host platform supports POSIX modes.
-- Install docs now steer beta users to non-editable GUI installs while the
-  Python 3.13 editable-install console-script issue is tracked separately.
+- Editable installs on Python 3.13 have been verified for both `recce` and
+  `recce-gui` console scripts.
 - Companies House and SEC EDGAR domain lookups now use RDAP registrant
   organisation evidence before falling back to a domain-label company guess.
 - Existing investigation databases migrate `audit_events.investigation_id` from

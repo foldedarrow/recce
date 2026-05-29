@@ -19,9 +19,3 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev,gui]'
 ```
-
-Note: editable installs are currently affected by
-[issue #4](https://github.com/foldedarrow/recce/issues/4) on Python 3.13 +
-Hatchling, where generated console scripts may fail to import `recce`. Use the
-non-editable install from the README for beta/user runs until that issue is
-fixed.

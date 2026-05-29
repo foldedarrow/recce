@@ -32,11 +32,6 @@ Recce Pro is a separate product.
 
 Requires **Python 3.10+** (3.11+ recommended).
 
-For the GUI beta, use a normal non-editable install. Do not use `pip install -e`
-for end-user installs; editable installs are currently tracked in
-[issue #4](https://github.com/foldedarrow/recce/issues/4) because Python 3.13 +
-Hatchling can leave the generated console scripts unable to import `recce`.
-
 ### Option A: local venv
 
 ```bash
@@ -211,6 +206,9 @@ Hardening phase before paid GA.
 recce ships with a Streamlit-based GUI that wraps the same async modules as
 the CLI. Username, Email, Phone, Domain, and Investigations modes include forms
 for the relevant flags, live results, and CSV/JSON download buttons.
+
+A cold-install and real-investigation walkthrough is available at
+[`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md).
 
 ### Install
 

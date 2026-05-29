@@ -40,6 +40,7 @@ config.local.toml
 
 # Output
 *.log
+artifacts/
 out/
 results/
 *.json.out

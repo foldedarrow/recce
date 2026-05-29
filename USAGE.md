@@ -191,10 +191,6 @@ Or, with pipx:
 pipx install '~/Documents/Claude/Projects/recce[gui]' --force
 ```
 
-Use a normal non-editable install for GUI beta runs. Editable installs are for
-contributors only and are currently tracked in
-[`issue #4`](https://github.com/foldedarrow/recce/issues/4) on Python 3.13.
-
 The `[gui]` extra adds `streamlit` + `pandas`. The CLI keeps working exactly as
 before.
 
