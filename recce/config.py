@@ -9,6 +9,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from recce import __version__
+
+DEFAULT_USER_AGENT = f"recce/{__version__} (+https://github.com/foldedarrow/recce)"
+
 
 def _load_env() -> None:
     cwd_env = Path.cwd() / ".env"
@@ -98,12 +102,7 @@ class Settings:
             securitytrails_api_key=os.getenv("SECURITYTRAILS_API_KEY") or None,
             censys_api_id=os.getenv("CENSYS_API_ID") or None,
             censys_api_secret=os.getenv("CENSYS_API_SECRET") or None,
-            user_agent=os.getenv(
-                "RECCE_USER_AGENT",
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36",
-            ),
+            user_agent=os.getenv("RECCE_USER_AGENT", DEFAULT_USER_AGENT),
             timeout=float(os.getenv("RECCE_TIMEOUT", "12")),
             max_concurrency=int(os.getenv("RECCE_CONCURRENCY", "30")),
         )

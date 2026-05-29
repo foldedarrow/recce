@@ -26,7 +26,13 @@ from recce.modules.domain_summary import build_domain_summary
 from recce.modules.email import search_email
 from recce.modules.email_deep import deep_email_probes
 from recce.modules.phone import search_phone
-from recce.modules.username import cache_status, category_counts, search_username, site_count
+from recce.modules.username import (
+    DEFAULT_PER_DOMAIN_RATE,
+    cache_status,
+    category_counts,
+    search_username,
+    site_count,
+)
 from recce.providers import append_registry_gate_hits, provider_status_rows
 
 # ---------------------------------------------------------------------------
@@ -176,6 +182,13 @@ with st.sidebar:
         value=int(settings.max_concurrency),
         step=1,
     )
+    runtime_per_domain_rate = st.number_input(
+        "Username domain rate",
+        min_value=0.0,
+        max_value=10.0,
+        value=float(DEFAULT_PER_DOMAIN_RATE),
+        step=0.5,
+    )
     runtime_proxy = st.text_input("Proxy", placeholder="socks5://127.0.0.1:9050")
 
     if st.button("Refresh WMN data", use_container_width=True):
@@ -286,6 +299,7 @@ async def rerun_saved_query(run: dict[str, Any]) -> Report:
                 only_categories=set(args.get("only_categories") or []) or None,
                 exclude_categories=set(args.get("exclude_categories") or []) or None,
                 include_nsfw=bool(args.get("include_nsfw")),
+                per_domain_rate=float(args.get("per_domain_rate") or DEFAULT_PER_DOMAIN_RATE),
                 show_progress=False,
             )
         if run["query_type"] == "email":
@@ -817,6 +831,7 @@ def _username_mode() -> None:
                         only_categories=only,
                         exclude_categories=exclude,
                         include_nsfw=nsfw,
+                        per_domain_rate=float(runtime_per_domain_rate),
                         show_progress=False,
                     )
 
@@ -834,6 +849,7 @@ def _username_mode() -> None:
                         "exclude_categories": sorted(exclude) if exclude else [],
                         "timeout": runtime_timeout,
                         "request_concurrency": int(runtime_concurrency),
+                        "per_domain_rate": float(runtime_per_domain_rate),
                         "proxy": bool(runtime_proxy.strip()),
                     },
                 )
