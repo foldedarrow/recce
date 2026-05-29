@@ -18,7 +18,7 @@ import streamlit as st
 from recce import __version__
 from recce.config import Settings, user_env_path, write_user_env
 from recce.core.http import http_client
-from recce.core.investigations import InvestigationStore
+from recce.core.investigations import InvestigationStore, delete_confirmation_matches
 from recce.core.result import Report, Status
 from recce.licensing import has_pro_entitlement, pro_licence_path, write_pro_licence
 from recce.modules.domain import search_domain
@@ -84,7 +84,18 @@ with st.sidebar:
 
     st.divider()
     st.caption("Investigation")
-    investigations = store.list_investigations()
+    case_filter_label = st.selectbox(
+        "Case filter",
+        ["Active only", "Active + closed", "All"],
+        label_visibility="collapsed",
+        key="case_status_filter",
+    )
+    case_filter_statuses = {
+        "Active only": None,
+        "Active + closed": {"open", "closed"},
+        "All": {"open", "closed", "archived"},
+    }[case_filter_label]
+    investigations = store.list_investigations(include_statuses=case_filter_statuses)
     valid_ids = {inv["id"] for inv in investigations}
     current_id = st.session_state.get("active_investigation_id")
     if current_id not in valid_ids:
@@ -223,6 +234,21 @@ def active_investigation() -> dict[str, Any] | None:
     if not inv_id:
         return None
     return store.get_investigation(inv_id)
+
+
+def audit_event_label(event_type: str) -> str:
+    labels = {
+        "investigation.created": "Case created",
+        "investigation.closed": "Case closed",
+        "investigation.reopened": "Case reopened",
+        "investigation.archived": "Case archived",
+        "investigation.unarchived": "Case unarchived",
+        "investigation.deleted": "Case deleted",
+        "run.recorded": "Run recorded",
+        "domain.run": "Domain run",
+        "domain.bruteforce.run": "Domain bruteforce run",
+    }
+    return labels.get(event_type, event_type)
 
 
 def record_gui_run(report: Report, args: dict[str, Any]) -> None:
@@ -495,6 +521,56 @@ def _investigations_mode() -> None:
         st.markdown("**Scope note**")
         st.write(inv["scope_note"])
 
+    with st.expander("Case actions", expanded=False):
+        reason = st.text_input("Reason", key=f"case_action_reason_{inv['id']}")
+        action_cols = st.columns(2)
+        if inv["status"] == "open":
+            if action_cols[0].button("Close case", use_container_width=True):
+                store.close_investigation(inv["id"], reason=reason)
+                st.session_state["active_investigation_id"] = None
+                st.success("Case closed.")
+                st.rerun()
+            if action_cols[1].button("Archive case", use_container_width=True):
+                store.archive_investigation(inv["id"], reason=reason)
+                st.session_state["active_investigation_id"] = None
+                st.success("Case archived.")
+                st.rerun()
+        elif inv["status"] == "closed":
+            if action_cols[0].button("Reopen case", use_container_width=True):
+                store.reopen_investigation(inv["id"], reason=reason)
+                st.success("Case reopened.")
+                st.rerun()
+            if action_cols[1].button("Archive case", use_container_width=True):
+                store.archive_investigation(inv["id"], reason=reason)
+                st.session_state["active_investigation_id"] = None
+                st.success("Case archived.")
+                st.rerun()
+        elif inv["status"] == "archived":
+            if action_cols[0].button("Unarchive case", use_container_width=True):
+                store.unarchive_investigation(inv["id"], reason=reason)
+                st.success("Case unarchived.")
+                st.rerun()
+            if action_cols[1].button("Close case", use_container_width=True):
+                store.close_investigation(inv["id"], reason=reason)
+                st.session_state["active_investigation_id"] = None
+                st.success("Case closed.")
+                st.rerun()
+
+        st.divider()
+        with st.form(f"delete_case_form_{inv['id']}"):
+            st.caption("Permanent delete removes the case and saved runs. A tombstone remains in the audit chain.")
+            delete_reason = st.text_input("Delete reason", key=f"delete_reason_{inv['id']}")
+            typed_name = st.text_input("Type case name to confirm", key=f"delete_confirm_{inv['id']}")
+            delete_submitted = st.form_submit_button("Delete case", type="secondary", use_container_width=True)
+        if delete_submitted:
+            if not delete_confirmation_matches(inv["name"], typed_name):
+                st.error("Case name confirmation did not match.")
+            else:
+                store.delete_investigation(inv["id"], reason=delete_reason)
+                st.session_state["active_investigation_id"] = None
+                st.success("Case deleted.")
+                st.rerun()
+
     export_base = "".join(c if c.isalnum() else "-" for c in inv["name"].lower())[:40]
     st.subheader("Exports")
     d1, d2, d3 = st.columns(3)
@@ -617,7 +693,7 @@ def _investigations_mode() -> None:
             audit_rows = [
                 {
                     "At": event["created_at"],
-                    "Event": event["event_type"],
+                    "Event": audit_event_label(event["event_type"]),
                     "Hash": event["event_hash"][:16],
                     "Previous": event["previous_hash"][:16],
                 }
@@ -696,8 +772,8 @@ def _api_keys_mode() -> None:
         st.markdown(
             "- EmailRep works without a key but benefits from higher rate limits when configured.\n"
             "- NumVerify's free tier is HTTP-only and limited; recce warns rather than blocking it.\n"
-            "- Shodan, VirusTotal, SecurityTrails, and Censys are wired as Pro-gated providers first; "
-            "their live enrichment calls come next."
+            "- Shodan is a live Pro-gated provider for domain DNS intelligence. VirusTotal, "
+            "SecurityTrails, and Censys remain Pro-gated placeholders for future live enrichment."
         )
 
 

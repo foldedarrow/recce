@@ -160,6 +160,18 @@ recce --version
 Lookup commands also accept `--no-providers` to disable optional API provider
 calls, and `--skip-provider provider-id` for registry-level provider skips.
 
+### Investigations
+
+```bash
+recce investigations list
+recce investigations list --include closed,archived
+recce investigations close <case-id> --reason "case concluded"
+recce investigations archive <case-id> --reason "old case"
+recce investigations reopen <case-id>
+recce investigations unarchive <case-id>
+recce investigations delete <case-id> --reason "smoke test" --yes
+```
+
 ---
 
 ## Output
@@ -176,6 +188,11 @@ The GUI investigations workspace stores case data locally at
 `~/.local/share/recce/investigations.sqlite3` by default. The database file is
 created with `0600` permissions where the host platform supports POSIX file
 modes.
+
+Investigations can be closed, reopened, archived, unarchived, or permanently
+deleted from the GUI and the `recce investigations` CLI. Permanent deletion
+removes the case and saved runs, but leaves a tombstone event in the local
+audit chain.
 
 This beta build does not encrypt the SQLite database at the application layer.
 Use full-disk encryption on the host machine: BitLocker on Windows, FileVault
