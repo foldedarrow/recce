@@ -1,0 +1,9 @@
+# Weekly WMN refresh. Install both files, then: sudo systemctl enable --now recce-update.timer
+[Unit]
+Description=Weekly recce WhatsMyName refresh
+[Timer]
+OnCalendar=weekly
+Persistent=true
+RandomizedDelaySec=1h
+[Install]
+WantedBy=timers.target

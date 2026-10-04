@@ -1,7 +1,9 @@
-# recce OSINT web GUI (Streamlit) — systemd unit.
-# Install: sudo cp deploy/recce-web.service /etc/systemd/system/
+# recce OSINT web GUI (Streamlit) — hardened systemd unit.
+# Install: sudo cp deploy/recce-web.service /etc/systemd/system/   # edit User/Group/HOME
+#          sudo install -d -m0700 /home/youruser/.config/recce /home/youruser/.local/share/recce \
+#                                 /home/youruser/.cache /home/youruser/.streamlit
 #          sudo systemctl daemon-reload && sudo systemctl enable --now recce-web
-# Serves on loopback only; front it with a reverse proxy that adds auth.
+# Serves on loopback only; front it with a reverse proxy that adds auth (see Caddyfile.example).
 [Unit]
 Description=recce OSINT web GUI (Streamlit, loopback 127.0.0.1:8501)
 After=network-online.target
@@ -16,15 +18,34 @@ Environment=PATH=/opt/recce/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/
 Environment=HOME=/home/youruser
 # Optional API keys (tool works without them); see .env.example for the full list.
 EnvironmentFile=-/etc/recce/web.env
-ExecStart=/opt/recce/.venv/bin/recce-gui \
-  --server.address 127.0.0.1 \
-  --server.port 8501 \
-  --server.enableCORS false \
-  --server.enableXsrfProtection false
+ExecStart=/opt/recce/.venv/bin/recce-gui --server.address 127.0.0.1 --server.port 8501
 Restart=on-failure
 RestartSec=5
+
+# --- Sandboxing (systemd-analyze security: ~1.9 OK) ---
+UMask=0077
 NoNewPrivileges=yes
 PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+# recce writes to: config (keys/licence), data (investigations.sqlite3), cache (WMN update), streamlit
+ReadWritePaths=/opt/recce /home/youruser/.config/recce /home/youruser/.local/share/recce /home/youruser/.cache /home/youruser/.streamlit
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
 
 [Install]
 WantedBy=multi-user.target

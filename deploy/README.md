@@ -19,11 +19,22 @@ without them, degrading paid sources to `skipped`.
 
 ## 2. systemd service
 
+The unit is sandboxed (`ProtectSystem=strict`), so pre-create the dirs recce
+writes to before first start:
+
 ```bash
 sudo cp deploy/recce-web.service /etc/systemd/system/   # edit User/Group/HOME first
+install -d -m0700 ~/.config/recce ~/.local/share/recce ~/.cache ~/.streamlit
 sudo systemctl daemon-reload
 sudo systemctl enable --now recce-web
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8501/_stcore/health   # 200
+```
+
+Optional weekly WhatsMyName refresh:
+
+```bash
+sudo cp deploy/recce-update.service deploy/recce-update.timer /etc/systemd/system/
+sudo systemctl enable --now recce-update.timer
 ```
 
 ## 3. Caddy + login

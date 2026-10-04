@@ -1,0 +1,11 @@
+# One-shot: refresh the WhatsMyName site database. Paired with recce-update.timer.
+[Unit]
+Description=recce: refresh WhatsMyName database
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+User=youruser
+Group=youruser
+Environment=HOME=/home/youruser
+ExecStart=/opt/recce/.venv/bin/recce update
