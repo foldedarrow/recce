@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `recce phone --deep`: a passive, PhoneInfoga-style search-engine footprint —
+  clickable per-platform `site:` dorks (socials, classifieds, paste sites) and
+  category dorks (documents, paste sites, spam/reputation) across every common
+  number format, plus one best-effort live DuckDuckGo query. Gated on
+  `--i-have-consent`; also available as a toggle in the GUI phone tab.
+- Phone search pivots now cover six number formats across Google, Bing and
+  DuckDuckGo (previously two formats on Google only).
+
+### Fixed
+
+- NumVerify now tries HTTPS first and transparently falls back to HTTP on the
+  free tier's `https_access_restricted` (error 105), so free-tier keys return
+  carrier data instead of an error.
+
 ## [0.5.0] - 2026-05-29
 
 ### Added

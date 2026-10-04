@@ -89,6 +89,20 @@ def _parse(phone: str, default_region: str | None = None) -> Hit:
     )
 
 
+def number_format_variants(e164: str, intl: str, national: str) -> list[str]:
+    """The common textual shapes a number appears in online, de-duplicated and
+    ordered. Shared by the manual-pivot search links and the deep footprint."""
+    import re as _re
+    bare = e164.lstrip("+")
+    national_digits = _re.sub(r"\D", "", national or "")
+    variants: list[str] = []
+    for v in (e164, bare, "00" + bare, intl, national, national_digits):
+        v = (v or "").strip()
+        if v and v not in variants:
+            variants.append(v)
+    return variants
+
+
 def _pivot_hits(e164: str, intl: str, national: str, region: str) -> list[Hit]:
     """Suggest where to check this number manually. We don't probe these
     automatically — most messaging apps' lookups require an authenticated
@@ -105,11 +119,7 @@ def _pivot_hits(e164: str, intl: str, national: str, region: str) -> list[Hit]:
     )
     # A number appears online in many shapes; search the common ones at once so
     # the pivot surfaces hits regardless of how a page happens to format it.
-    variants: list[str] = []
-    for v in (e164, bare, "00" + bare, intl, national, national_digits):
-        v = (v or "").strip()
-        if v and v not in variants:
-            variants.append(v)
+    variants = number_format_variants(e164, intl, national)
     search_q = quote(" OR ".join(f'"{v}"' for v in variants))
     sync_q = quote(e164)
     hits = [
@@ -179,6 +189,8 @@ async def search_phone(
     *,
     default_region: str | None = "GB",
     skip_provider_ids: set[str] | None = None,
+    deep: bool = False,
+    deep_concurrency: int = 4,
 ) -> Report:
     report = Report(query=phone, query_type="phone")
     parsed_hit = _parse(phone, default_region)
@@ -212,5 +224,14 @@ async def search_phone(
         skip_provider_ids=skip_provider_ids,
     ):
         report.add(h)
+
+    if deep:
+        from .phone_deep import deep_phone_probes
+
+        for h in await deep_phone_probes(
+            e164, intl, national, client=client, max_concurrency=deep_concurrency
+        ):
+            report.add(h)
+
     report.finish()
     return report

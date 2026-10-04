@@ -408,6 +408,11 @@ def cmd_phone(
         None, "--file", "-f", help="File of phone numbers, one per line.",
     ),
     region: str = typer.Option("GB", "--region", "-r", help="Default region (ISO-3166 alpha-2)."),
+    deep: bool = typer.Option(
+        False, "--deep", "-d",
+        help="Passive footprint: search DuckDuckGo across number formats + site dorks "
+             "(socials, classifieds, paste sites). Slower (~10–20s); reads public results only.",
+    ),
     show_misses: bool = typer.Option(False, "--show-misses"),
     show_errors: bool = typer.Option(False, "--show-errors"),
     json_out: Path | None = typer.Option(None, "--json"),
@@ -415,6 +420,13 @@ def cmd_phone(
     proxy: str | None = typer.Option(None, "--proxy"),
     batch_concurrency: int = typer.Option(
         1, "--batch-concurrency", help="How many phone numbers to process at once.",
+    ),
+    deep_concurrency: int = typer.Option(
+        4, "--deep-concurrency", help="Max concurrent deep-mode search queries.",
+    ),
+    have_consent: bool = typer.Option(
+        False, "--i-have-consent",
+        help="Required for --deep; confirms you own or have consent to profile the number(s).",
     ),
     no_providers: bool = typer.Option(
         False, "--no-providers", help="Disable optional API provider integrations.",
@@ -428,7 +440,15 @@ def cmd_phone(
         settings = settings.without_provider_integrations()
     skip_provider_ids = _parse_csv_set(skip_provider)
     targets = _read_targets(phone, file)
-    banner("recce › phone", subtitle=f"{len(targets)} target(s) · default region: {region}")
+    if deep and not have_consent:
+        console.print(
+            "[red]error:[/] --deep requires --i-have-consent. "
+            "Deep mode builds a search-engine footprint of the number; use it only "
+            "on numbers you own or have explicit consent to investigate."
+        )
+        raise typer.Exit(2)
+    sub = f"{len(targets)} target(s) · default region: {region}" + ("   · deep mode ON" if deep else "")
+    banner("recce › phone", subtitle=sub)
     _print_key_status(settings, ["numverify_api_key"])
 
     async def run_one(num: str) -> Report:
@@ -444,6 +464,8 @@ def cmd_phone(
                 settings,
                 default_region=region,
                 skip_provider_ids=skip_provider_ids,
+                deep=deep,
+                deep_concurrency=deep_concurrency,
             )
 
     reports = asyncio.run(_run_bounded(run_one, targets, batch_concurrency))

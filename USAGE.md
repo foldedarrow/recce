@@ -57,9 +57,12 @@ recce phone "+447826916903"                             # international format (
 recce phone "07826 916903" --region GB                  # local format + region hint
 recce phone "+14155551234" --region US
 recce phone --file numbers.txt
+recce phone "+447826916903" --deep --i-have-consent         # passive search-engine footprint
 ```
 
-Output gives you carrier, region, type, plus clickable URLs for **WhatsApp**, **Google web search**, **Truecaller**, **Sync.me**.
+Output gives you carrier, region, type, plus clickable URLs for **WhatsApp**, **Google/Bing/DuckDuckGo web search** (across every number format), **Truecaller**, **Sync.me**.
+
+`--deep` adds a passive footprint: a comprehensive set of clickable **site: dorks** for socials, classifieds and paste sites (plus document and spam/reputation dorks), each spanning all common formats of the number, and one best-effort live DuckDuckGo query listing the public pages it surfaces. It only reads public search results — it never contacts the number — but it still profiles a person, so it requires `--i-have-consent`. Free search endpoints challenge automated quoted queries from server IPs, so the live query is best-effort and degrades to the dork links when rate-limited.
 
 ---
 

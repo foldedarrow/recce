@@ -305,11 +305,15 @@ async def rerun_saved_query(run: dict[str, Any]) -> Report:
         if run["query_type"] == "email":
             report = await search_email(query, client, settings)
         elif run["query_type"] == "phone":
+            if args.get("deep") and not args.get("ownership_or_consent_confirmed"):
+                raise ValueError("Saved deep phone run is missing ownership or consent evidence.")
             report = await search_phone(
                 query,
                 client,
                 settings,
                 default_region=str(args.get("default_region") or "GB"),
+                deep=bool(args.get("deep")),
+                deep_concurrency=int(args.get("deep_concurrency") or 4),
             )
         elif run["query_type"] == "domain":
             if args.get("bruteforce") and not args.get("i_am_authorised"):
@@ -959,7 +963,7 @@ def _email_mode() -> None:
 
 def _phone_mode() -> None:
     st.markdown("## Phone lookup")
-    st.caption("Parse, classify, and emit clickable manual-pivot links (WhatsApp, Truecaller, Sync.me, Google web search).")
+    st.caption("Parse, classify, emit clickable manual-pivot links, and (deep mode) build a passive search-engine footprint.")
 
     regions = ["GB", "US", "IE", "FR", "DE", "ES", "IT", "NL", "AU", "CA", "NZ", "JP"]
     with st.form("p_form"):
@@ -973,10 +977,33 @@ def _phone_mode() -> None:
         region = c1.selectbox("Default region", regions, index=0, key="p_region")
         c2.checkbox("Show misses", value=False, key="p_misses")
         c3.checkbox("Show errors", value=False, key="p_errors")
+        d1, d2 = st.columns([2, 1])
+        deep = d1.checkbox(
+            "Deep footprint (passive search-engine OSINT)",
+            value=False,
+            key="p_deep",
+            help="Query DuckDuckGo across number formats + site dorks (socials, classifieds, "
+                 "paste sites). Passive — reads public results only. Slower (~10–20s).",
+        )
+        deep_concurrency = d2.number_input(
+            "Deep concurrency", min_value=1, max_value=10, value=4, step=1, key="p_deep_concurrency"
+        )
+        consent = st.checkbox(
+            "I own this number or have consent",
+            value=False,
+            key="p_consent",
+            help="Required for deep mode.",
+        )
         submitted = st.form_submit_button("Run", type="primary", use_container_width=True)
 
     if submitted and target.strip():
-        with st.status(f"Looking up **{target}**…", expanded=False) as status:
+        if deep and not consent:
+            st.error("Deep mode requires ownership or consent confirmation.")
+            return
+        label = f"Looking up **{target}**…"
+        if deep:
+            label += " _(deep mode — this can take ~10–20s)_"
+        with st.status(label, expanded=False) as status:
             async def run() -> Report:
                 async with http_client(
                     user_agent=settings.user_agent,
@@ -984,7 +1011,14 @@ def _phone_mode() -> None:
                     max_concurrency=int(runtime_concurrency),
                     proxy=runtime_proxy.strip() or None,
                 ) as client:
-                    return await search_phone(target.strip(), client, settings, default_region=region)
+                    return await search_phone(
+                        target.strip(),
+                        client,
+                        settings,
+                        default_region=region,
+                        deep=deep,
+                        deep_concurrency=int(deep_concurrency),
+                    )
 
             try:
                 report = asyncio.run(run())
@@ -996,6 +1030,9 @@ def _phone_mode() -> None:
                     {
                         "mode": "phone",
                         "default_region": region,
+                        "deep": deep,
+                        "ownership_or_consent_confirmed": consent,
+                        "deep_concurrency": int(deep_concurrency),
                         "timeout": runtime_timeout,
                         "request_concurrency": int(runtime_concurrency),
                         "proxy": bool(runtime_proxy.strip()),
