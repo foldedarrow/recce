@@ -298,6 +298,39 @@ async def test_numverify_provider_queries_api_when_configured() -> None:
     }
 
 
+class SequenceClient:
+    """Returns queued responses in order; records the URLs requested."""
+
+    def __init__(self, responses: list) -> None:  # type: ignore[no-untyped-def]
+        self.responses = list(responses)
+        self.requests: list[tuple[str, dict]] = []
+
+    async def get(self, url: str, **kwargs):  # type: ignore[no-untyped-def]
+        self.requests.append((url, kwargs))
+        return self.responses.pop(0) if self.responses else None
+
+
+@pytest.mark.asyncio
+async def test_numverify_falls_back_to_http_on_https_restriction() -> None:
+    restricted = DummyResponse(200, {"error": {"code": 105, "type": "https_access_restricted"}})
+    ok = DummyResponse(200, {"valid": True, "carrier": "Example Mobile", "line_type": "mobile"})
+    client = SequenceClient([restricted, ok])
+
+    hits = await query_registered_providers(
+        "+447826916903",
+        "phone",
+        client,  # type: ignore[arg-type]
+        _settings(numverify_api_key="num-key"),
+    )
+
+    assert len(hits) == 1
+    assert hits[0].status is Status.FOUND
+    assert "Example Mobile" in (hits[0].summary or "")
+    # First attempt HTTPS, then transparently retried over HTTP.
+    assert client.requests[0][0] == "https://apilayer.net/api/validate"
+    assert client.requests[1][0] == "http://apilayer.net/api/validate"
+
+
 @pytest.mark.asyncio
 async def test_numverify_provider_can_be_skipped() -> None:
     client = DummyClient(DummyResponse(200, {"valid": True}))

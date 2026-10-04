@@ -103,7 +103,14 @@ def _pivot_hits(e164: str, intl: str, national: str, region: str) -> list[Hit]:
         f"https://www.truecaller.com/search/{cc}/{national_digits}"
         if cc and national_digits else f"https://www.truecaller.com/search/{bare}"
     )
-    google_q = quote(f'"{intl}" OR "{national}"')
+    # A number appears online in many shapes; search the common ones at once so
+    # the pivot surfaces hits regardless of how a page happens to format it.
+    variants: list[str] = []
+    for v in (e164, bare, "00" + bare, intl, national, national_digits):
+        v = (v or "").strip()
+        if v and v not in variants:
+            variants.append(v)
+    search_q = quote(" OR ".join(f'"{v}"' for v in variants))
     sync_q = quote(e164)
     hits = [
         Hit(
@@ -118,9 +125,25 @@ def _pivot_hits(e164: str, intl: str, national: str, region: str) -> list[Hit]:
             source="Google web",
             category="pivot",
             status=Status.FOUND,
-            url=f"https://www.google.com/search?q={google_q}",
-            summary="search the web for either format of the number (often surfaces forum posts / classified ads)",
+            url=f"https://www.google.com/search?q={search_q}",
+            summary=f"search the web for all {len(variants)} common formats of the number (often surfaces forum posts / classified ads)",
             confidence=0.5,
+        ),
+        Hit(
+            source="Bing web",
+            category="pivot",
+            status=Status.FOUND,
+            url=f"https://www.bing.com/search?q={search_q}",
+            summary="second engine — indexes pages Google misses",
+            confidence=0.4,
+        ),
+        Hit(
+            source="DuckDuckGo",
+            category="pivot",
+            status=Status.FOUND,
+            url=f"https://duckduckgo.com/?q={search_q}",
+            summary="third engine — no personalisation, different result set",
+            confidence=0.4,
         ),
         Hit(
             source="Truecaller",
