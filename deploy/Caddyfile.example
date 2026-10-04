@@ -1,0 +1,26 @@
+# Example Caddy blocks to put the recce GUI behind a login.
+# recce-gui serves plain HTTP on 127.0.0.1:8501 (see deploy/recce-web.service).
+# Generate the password hash with:  caddy hash-password
+#
+# Pair the loopback block with Tailscale Serve for a real HTTPS hostname:
+#   sudo tailscale serve --bg --https=8443 http://127.0.0.1:8081
+#   -> https://<node>.<tailnet>.ts.net:8443
+
+# Optional LAN access over HTTPS (Caddy's internal CA; browser warns until trusted).
+https://YOUR.LAN.IP:8444 {
+	tls internal
+	basic_auth {
+		youruser REPLACE_WITH_caddy_hash-password_OUTPUT
+	}
+	reverse_proxy 127.0.0.1:8501
+}
+
+# Loopback upstream for `tailscale serve` — Tailscale terminates TLS with the
+# real ts.net cert; Caddy still enforces the login.
+:8081 {
+	bind 127.0.0.1
+	basic_auth {
+		youruser REPLACE_WITH_caddy_hash-password_OUTPUT
+	}
+	reverse_proxy 127.0.0.1:8501
+}
