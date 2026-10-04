@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import pytest
 
+import recce.licensing as _licensing
 from recce.config import Settings
 from recce.core.result import Hit, Report, Status
 from recce.providers import (
@@ -8,6 +9,16 @@ from recce.providers import (
     provider_status_rows,
     query_registered_providers,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_pro_entitlement(tmp_path, monkeypatch):  # type: ignore[no-untyped-def]
+    """Pro entitlement defaults to INACTIVE in tests, regardless of the dev's
+    ~/.config/recce/pro_licence.txt. Tests that want it active set
+    RECCE_PRO_LICENCE themselves."""
+    monkeypatch.delenv("RECCE_PRO_LICENCE", raising=False)
+    monkeypatch.setattr(_licensing, "pro_licence_path", lambda: tmp_path / "pro_licence.txt")
+    yield
 
 
 def _settings(**overrides) -> Settings:  # type: ignore[no-untyped-def]
@@ -262,10 +273,10 @@ async def test_numverify_provider_returns_not_configured_skip() -> None:
         _settings(),
     )
 
-    assert len(hits) == 1
-    assert hits[0].source == "NumVerify"
-    assert hits[0].status is Status.SKIPPED
-    assert "NUMVERIFY_API_KEY" in (hits[0].summary or "")
+    nv = [h for h in hits if h.source == "NumVerify"]
+    assert len(nv) == 1
+    assert nv[0].status is Status.SKIPPED
+    assert "NUMVERIFY_API_KEY" in (nv[0].summary or "")
 
 
 @pytest.mark.asyncio
@@ -286,16 +297,89 @@ async def test_numverify_provider_queries_api_when_configured() -> None:
         _settings(numverify_api_key="num-key"),
     )
 
-    assert len(hits) == 1
-    assert hits[0].source == "NumVerify"
-    assert hits[0].status is Status.FOUND
-    assert "Example Mobile" in (hits[0].summary or "")
+    nv = [h for h in hits if h.source == "NumVerify"]
+    assert len(nv) == 1
+    assert nv[0].status is Status.FOUND
+    assert "Example Mobile" in (nv[0].summary or "")
     assert client.requests[0][0] == "https://apilayer.net/api/validate"
     assert client.requests[0][1]["params"] == {
         "access_key": "num-key",
         "number": "447826916903",
         "format": 1,
     }
+
+
+_VONAGE_OK = {
+    "status": 0,
+    "status_message": "Success",
+    "lookup_outcome": 0,
+    "valid_number": "valid",
+    "reachable": "reachable",
+    "ported": "ported",
+    "current_carrier": {"name": "EE", "network_type": "mobile", "network_code": "23430"},
+    "original_carrier": {"name": "Vodafone UK", "network_type": "mobile"},
+    "roaming": "not_roaming",
+    "country_name": "United Kingdom",
+}
+
+
+@pytest.mark.asyncio
+async def test_vonage_provider_returns_not_configured_skip() -> None:
+    hits = await query_registered_providers(
+        "+447826916903", "phone", DummyClient(None), _settings(),  # type: ignore[arg-type]
+    )
+    vonage = [h for h in hits if h.source == "Vonage Number Insight"]
+    assert len(vonage) == 1
+    assert vonage[0].status is Status.SKIPPED
+    assert "VONAGE_API_KEY" in (vonage[0].summary or "")
+
+
+@pytest.mark.asyncio
+async def test_vonage_provider_is_pro_gated_without_entitlement() -> None:
+    client = DummyClient(DummyResponse(200, _VONAGE_OK))
+    hits = await query_registered_providers(
+        "+447826916903", "phone", client,  # type: ignore[arg-type]
+        _settings(vonage_api_key="k", vonage_api_secret="s"),
+    )
+    vonage = [h for h in hits if h.source == "Vonage Number Insight"]
+    assert len(vonage) == 1
+    assert vonage[0].status is Status.SKIPPED
+    assert "Pro" in (vonage[0].summary or "")
+    assert client.requests == []  # gated before any network call
+
+
+@pytest.mark.asyncio
+async def test_vonage_provider_queries_when_entitled(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-entitlement")
+    client = DummyClient(DummyResponse(200, _VONAGE_OK))
+    hits = await query_registered_providers(
+        "+447826916903", "phone", client,  # type: ignore[arg-type]
+        _settings(vonage_api_key="k", vonage_api_secret="s"),
+    )
+    vonage = [h for h in hits if h.source == "Vonage Number Insight"]
+    assert len(vonage) == 1
+    assert vonage[0].status is Status.FOUND
+    summary = vonage[0].summary or ""
+    assert "carrier: EE" in summary
+    assert "ported: ported" in summary
+    assert "originally: Vodafone UK" in summary
+    assert "reachable: reachable" in summary
+    assert client.requests[0][0] == "https://api.nexmo.com/ni/advanced/json"
+    assert client.requests[0][1]["params"]["number"] == "447826916903"
+
+
+@pytest.mark.asyncio
+async def test_vonage_provider_reports_api_error(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-entitlement")
+    client = DummyClient(DummyResponse(200, {"status": 4, "status_message": "invalid credentials"}))
+    hits = await query_registered_providers(
+        "+447826916903", "phone", client,  # type: ignore[arg-type]
+        _settings(vonage_api_key="k", vonage_api_secret="s"),
+    )
+    vonage = [h for h in hits if h.source == "Vonage Number Insight"]
+    assert len(vonage) == 1
+    assert vonage[0].status is Status.ERROR
+    assert "invalid credentials" in (vonage[0].error or "")
 
 
 class SequenceClient:
@@ -323,9 +407,10 @@ async def test_numverify_falls_back_to_http_on_https_restriction() -> None:
         _settings(numverify_api_key="num-key"),
     )
 
-    assert len(hits) == 1
-    assert hits[0].status is Status.FOUND
-    assert "Example Mobile" in (hits[0].summary or "")
+    nv = [h for h in hits if h.source == "NumVerify"]
+    assert len(nv) == 1
+    assert nv[0].status is Status.FOUND
+    assert "Example Mobile" in (nv[0].summary or "")
     # First attempt HTTPS, then transparently retried over HTTP.
     assert client.requests[0][0] == "https://apilayer.net/api/validate"
     assert client.requests[1][0] == "http://apilayer.net/api/validate"
@@ -340,7 +425,7 @@ async def test_numverify_provider_can_be_skipped() -> None:
         "phone",
         client,  # type: ignore[arg-type]
         _settings(numverify_api_key="num-key"),
-        skip_provider_ids={"numverify"},
+        skip_provider_ids={"numverify", "vonage"},
     )
 
     assert hits == []

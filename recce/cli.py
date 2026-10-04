@@ -449,7 +449,7 @@ def cmd_phone(
         raise typer.Exit(2)
     sub = f"{len(targets)} target(s) · default region: {region}" + ("   · deep mode ON" if deep else "")
     banner("recce › phone", subtitle=sub)
-    _print_key_status(settings, ["numverify_api_key"])
+    _print_key_status(settings, ["numverify_api_key", "vonage_api_key", "vonage_api_secret"])
 
     async def run_one(num: str) -> Report:
         async with http_client(

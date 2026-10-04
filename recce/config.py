@@ -86,6 +86,8 @@ class Settings:
     timeout: float
     max_concurrency: int
     provider_integrations_enabled: bool = True
+    vonage_api_key: str | None = None
+    vonage_api_secret: str | None = None
 
     @classmethod
     def load(cls) -> Settings:
@@ -105,6 +107,8 @@ class Settings:
             user_agent=os.getenv("RECCE_USER_AGENT", DEFAULT_USER_AGENT),
             timeout=float(os.getenv("RECCE_TIMEOUT", "12")),
             max_concurrency=int(os.getenv("RECCE_CONCURRENCY", "30")),
+            vonage_api_key=os.getenv("VONAGE_API_KEY") or None,
+            vonage_api_secret=os.getenv("VONAGE_API_SECRET") or None,
         )
 
     def has(self, key: str) -> bool:

@@ -24,6 +24,7 @@ permissions where the host platform supports POSIX file modes.
 | Have I Been Pwned | Free | Email | `HIBP_API_KEY` | Provider-native live query |
 | Hunter.io | Free | Email | `HUNTER_API_KEY` | Provider-native email query; domain planned |
 | NumVerify | Free | Phone | `NUMVERIFY_API_KEY` | Provider-native live query |
+| Vonage Number Insight | Pro | Phone | `VONAGE_API_KEY`, `VONAGE_API_SECRET` | Provider-native live HLR: ported status, current/original carrier, reachability, roaming |
 | EmailRep | Free | Email | `EMAILREP_API_KEY` | Provider-native live query; key optional |
 | Shodan | Pro | Domain | `SHODAN_API_KEY` | Provider-native live query; Recce Pro gated |
 | VirusTotal | Pro | Domain, Email | `VIRUSTOTAL_API_KEY` | Gated, query implementation planned |

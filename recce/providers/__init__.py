@@ -15,6 +15,7 @@ from .hibp import HIBPProvider
 from .hunter import HunterProvider
 from .numverify import NumVerifyProvider
 from .shodan import ShodanProvider
+from .vonage import VonageNumberInsightProvider
 
 PROVIDERS: tuple[Provider, ...] = (
     Provider(
@@ -30,6 +31,7 @@ PROVIDERS: tuple[Provider, ...] = (
     HIBPProvider(),
     HunterProvider(),
     NumVerifyProvider(),
+    VonageNumberInsightProvider(),
     EmailRepProvider(),
     ShodanProvider(),
     Provider(

@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Vonage Number Insight (Advanced) provider: a Pro-gated live **HLR** lookup for
+  `recce phone` — current vs original carrier (number portability), ported
+  status, reachability, and roaming. Keys: `VONAGE_API_KEY`, `VONAGE_API_SECRET`.
 - `recce phone --deep`: a passive, PhoneInfoga-style search-engine footprint —
   clickable per-platform `site:` dorks (socials, classifieds, paste sites) and
   category dorks (documents, paste sites, spam/reputation) across every common
@@ -22,6 +25,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - NumVerify now tries HTTPS first and transparently falls back to HTTP on the
   free tier's `https_access_restricted` (error 105), so free-tier keys return
   carrier data instead of an error.
+- Test isolation: provider Pro-gating tests no longer depend on a developer's
+  local `~/.config/recce/pro_licence.txt` (entitlement now defaults to inactive
+  in the test suite).
 
 ## [0.5.0] - 2026-05-29
 
