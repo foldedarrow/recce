@@ -83,11 +83,15 @@ client). Still open, below.
 - **Email:** Microsoft consumer-account existence (the AAD `GetCredentialType`
   endpoint is unreliable for outlook.com — needs a different approach);
   keyed providers for DeHashed / Intelligence X / Snusbase (summaries only,
-  never secrets). holehe was audited on 2026-10-08
-  ([docs/HOLEHE_AUDIT.md](HOLEHE_AUDIT.md)): 33 of its 121 modules still
-  answer, and deep hits now get a same-domain canary. No holehe fork is
-  maintained; next is evaluating [user-scanner](https://github.com/kaifcodec/user-scanner)
-  (MIT, active, ~220 email modules, flags "loud" modules) as a replacement.
+  never secrets). Deep mode — **replaced**: holehe was audited on
+  2026-10-08 ([docs/HOLEHE_AUDIT.md](HOLEHE_AUDIT.md), 4 proven sites),
+  then [user-scanner](https://github.com/kaifcodec/user-scanner) 1.5.2.1
+  ([docs/USER_SCANNER_AUDIT.md](USER_SCANNER_AUDIT.md), 18 proven sites)
+  became the main backend, with holehe kept for 18 sites user-scanner lacks:
+  117 probes, 20 proven, every hit canary-checked. Still open: the 5 Alza
+  modules answer only from a residential exit, so a per-module exit
+  preference would help, and each user-scanner release needs a re-audit
+  before the pin moves.
 - **Phone:** Ofcom numbering data — **shipped**: an offline index of Ofcom's
   weekly allocation files (`recce/modules/ofcom.py`, refreshed by
   `recce update`) gives +44 numbers their originally allocated provider,

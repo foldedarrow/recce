@@ -979,9 +979,9 @@ def _email_mode() -> None:
         target = st.text_input("Email", placeholder="someone@example.com", key="e_target")
         c1, c2, c3 = st.columns(3)
         deep = c1.checkbox(
-            "Deep mode (probe ~30 sites)",
+            "Deep mode (probe ~115 sites)",
             value=False,
-            help="Slower (~30–60s). Only run on emails you own — sends real probes to each site's account-recovery system.",
+            help="Slower (~30–60s). Only run on emails you own — sends real probes to each site's sign-up and sign-in systems.",
             key="e_deep",
         )
         c2.checkbox("Show misses", value=False, key="e_misses")

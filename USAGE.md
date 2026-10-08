@@ -40,7 +40,7 @@ rate is conservative; pass `--per-domain-rate 0` only for trusted local tests.
 
 ## 2. `recce email <addr>`
 
-Look up an email. Without flags it's quick (Gravatar, MX provider, basic checks). Add `--deep` to also probe ~30 sites' signup/sign-in endpoints (via holehe) to find registered accounts. Each hit is re-checked with a made-up address at the same domain; sites that "find" that too are downgraded to unknown (`--no-deep-verify` turns this off).
+Look up an email. Without flags it's quick (Gravatar, MX provider, basic checks). Add `--deep` to also probe ~115 sites' sign-up/sign-in lookups (user-scanner, plus holehe for sites user-scanner lacks) to find registered accounts. Each hit is re-checked with a made-up address at the same domain; sites that "find" that too are downgraded to unknown (`--no-deep-verify` turns this off).
 
 ```bash
 recce email someone@example.com                         # quick: ~5 seconds
@@ -49,7 +49,7 @@ recce email --file emails.txt --deep --i-own-these-emails --batch-concurrency 1
 recce email someone@example.com --json out.json
 ```
 
-**`--deep` is only safe to use on emails you own or have explicit consent for** — it sends real probes to each site's sign-up and sign-in systems, so the CLI requires `--i-own-these-emails`. holehe modules that could alert the owner (a submitted password, a started sign-up, a reset flow) are never run; see [docs/HOLEHE_AUDIT.md](docs/HOLEHE_AUDIT.md).
+**`--deep` is only safe to use on emails you own or have explicit consent for** — it sends real probes to each site's sign-up and sign-in systems, so the CLI requires `--i-own-these-emails`. Modules that could alert the owner (a reset, OTP or login link, a submitted password, a started sign-up) are never run; see [docs/USER_SCANNER_AUDIT.md](docs/USER_SCANNER_AUDIT.md) and [docs/HOLEHE_AUDIT.md](docs/HOLEHE_AUDIT.md).
 
 ---
 

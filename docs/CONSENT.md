@@ -5,7 +5,9 @@ targeted traffic or queries against a subject.
 
 ## Email Deep Mode
 
-`recce email --deep` sends live signup/reset probes to third-party services.
+`recce email --deep` sends live sign-up and sign-in lookups to about 115 third-party services.
+Modules that could notify the address owner are never run (see
+[USER_SCANNER_AUDIT.md](USER_SCANNER_AUDIT.md)).
 Use it only for email addresses you own or where you have explicit authority.
 The CLI requires `--i-own-these-emails`.
 
