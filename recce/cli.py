@@ -451,7 +451,7 @@ def cmd_email(
     ),
     deep: bool = typer.Option(
         False, "--deep", "-d",
-        help="Probe ~140 sites' signup/reset endpoints to discover registered accounts. "
+        help="Probe ~30 sites' signup/sign-in endpoints (holehe) to discover registered accounts. "
              "Slower (~30–60s) and only safe to use on emails you own.",
     ),
     show_misses: bool = typer.Option(False, "--show-misses"),
@@ -474,6 +474,11 @@ def cmd_email(
     ),
     deep_retry_wait: float = typer.Option(
         15.0, "--deep-retry-wait", help="Seconds to wait before the deep-mode retry pass.",
+    ),
+    deep_verify: bool = typer.Option(
+        True, "--deep-verify/--no-deep-verify",
+        help="Re-probe deep-mode hits with a made-up address at the same domain; "
+             "sites that 'find' it too are downgraded to unknown.",
     ),
     own_emails: bool = typer.Option(
         False,
@@ -539,6 +544,7 @@ def cmd_email(
                 proxy=proxy,
                 retry=deep_retry,
                 retry_wait=deep_retry_wait,
+                verify=deep_verify,
             ):
                 r.add(hit)
             r.finish()
@@ -572,6 +578,7 @@ def cmd_email(
             "ownership_or_consent_confirmed": own_emails,
             "deep_concurrency": deep_concurrency,
             "deep_retry": deep_retry,
+            "deep_verify": deep_verify,
             "recursive": recursive,
             "depth": depth if recursive else 0,
         },

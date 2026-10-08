@@ -418,6 +418,7 @@ async def rerun_saved_query(run: dict[str, Any]) -> Report:
             max_concurrency=int(args.get("deep_concurrency") or 20),
             proxy=proxy,
             retry=bool(args.get("deep_retry", True)),
+            verify=bool(args.get("deep_verify", True)),
             show_progress=False,
         ):
             report.add(hit)
@@ -1040,7 +1041,7 @@ def _email_mode() -> None:
         target = st.text_input("Email", placeholder="someone@example.com", key="e_target")
         c1, c2, c3 = st.columns(3)
         deep = c1.checkbox(
-            "Deep mode (probe ~140 sites)",
+            "Deep mode (probe ~30 sites)",
             value=False,
             help="Slower (~30–60s). Only run on emails you own — sends real probes to each site's account-recovery system.",
             key="e_deep",

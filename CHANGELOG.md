@@ -9,6 +9,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Deep email canary**: every `recce email --deep` hit is re-probed with a
+  made-up address at the same domain, and sites that "find" it too are
+  downgraded to unknown (`--no-deep-verify` turns this off). The canary uses
+  the same domain because Proton's key server answers for made-up @pm.me
+  addresses.
+
 - **Ofcom numbering data** for +44 phone numbers (roadmap #6): the provider
   the number's block was originally allocated to (labelled as such, since
   ported numbers move), the block status and allocation date, and the area
@@ -128,6 +134,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   DuckDuckGo (previously two formats on Google only).
 
 ### Changed
+
+- **holehe module audit** (roadmap #6): all 121 holehe 1.61 modules were tested
+  with the operator's own addresses and made-up ones, over the Proton, Tor and
+  residential exits. Deep mode now runs 33 modules instead of 108. Skipped:
+  16 that could alert the address owner (submitted passwords, account
+  creation or sign-up starts, password-reset flows), which are never run,
+  plus 72 that are broken (1 always true, 15 always false, 39 erroring,
+  17 bot-walled on every exit). Each module has a dated reason; see
+  `docs/HOLEHE_AUDIT.md`. `lastfm` answers again and is back in.
 
 - **Censys credentials renamed**: `CENSYS_API_ID` / `CENSYS_API_SECRET` (legacy
   Search API) are replaced by `CENSYS_API_TOKEN` (Platform personal access
