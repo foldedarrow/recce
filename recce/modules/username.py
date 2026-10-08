@@ -48,6 +48,7 @@ from rich.progress import (
 )
 
 from ..config import Settings
+from ..core.egress import Exit, exit_label
 from ..core.http import HttpClient, ImpersonatingClient, impersonation_available
 from ..core.output import console
 from ..core.result import Hit, Report, Status
@@ -495,15 +496,21 @@ async def _verify_found(
     sites_by_name: dict[str, dict[str, Any]],
     hits: list[Hit],
     throttle: PerDomainThrottle | None,
+    exit_clients: dict[str, Any] | None = None,
 ) -> None:
     """Re-probe every FOUND site with a made-up username. A site that also
     "finds" the made-up account reports existence for any input, so the hit
-    is unverifiable and is downgraded (Maigret-style false-positive check)."""
+    is unverifiable and is downgraded (Maigret-style false-positive check).
+
+    A hit found through a fallback exit is re-probed through that same exit
+    (`exit_clients`, keyed by exit label), since the primary one is walled."""
     canary = _canary_username()
     found = [hit for hit in hits if hit.status is Status.FOUND and hit.source in sites_by_name]
+    exit_clients = exit_clients or {}
 
     async def check(hit: Hit) -> None:
-        probe = await _check_site(client, sites_by_name[hit.source], canary, throttle=throttle)
+        via = exit_clients.get(hit.extra.get("exit", ""), client)
+        probe = await _check_site(via, sites_by_name[hit.source], canary, throttle=throttle)
         hit.extra["canary"] = {"username": canary, "status": probe.status.value}
         if probe.status is Status.FOUND:
             hit.status = Status.UNKNOWN
@@ -511,6 +518,57 @@ async def _verify_found(
             hit.confidence = 0.2
 
     await asyncio.gather(*(check(hit) for hit in found))
+
+
+def _is_blocked(hit: Hit) -> bool:
+    return hit.status is Status.UNKNOWN and hit.extra.get("status_code") in GUARDED_HTTP_STATUSES
+
+
+async def _retry_blocked(
+    fallback: Any,
+    label: str,
+    sites_by_name: dict[str, dict[str, Any]],
+    hits: list[Hit],
+    username: str,
+    throttle: PerDomainThrottle | None,
+) -> None:
+    """Re-probe bot-walled sites through the fallback exit, in place."""
+
+    async def retry(index: int) -> None:
+        blocked = hits[index]
+        site = sites_by_name.get(blocked.source)
+        if site is None:
+            return
+        attempt = await _check_site(fallback, site, username, throttle=throttle)
+        record = {
+            "exit": label,
+            "status": attempt.status.value,
+            "detail": attempt.summary or attempt.error,
+            "primary": blocked.summary,
+        }
+        if attempt.status in (Status.FOUND, Status.NOT_FOUND):
+            attempt.extra["exit"] = label
+            attempt.extra["fallback"] = record
+            attempt.summary = f"{attempt.summary or attempt.status.value} · via {label}"
+            hits[index] = attempt
+        else:
+            blocked.extra["fallback"] = record
+
+    await asyncio.gather(*(retry(i) for i, hit in enumerate(hits) if _is_blocked(hit)))
+
+
+def _client_for_exit(client: Any, exit_: Exit, *, browser: bool) -> Any:
+    """A client like `client` that leaves through `exit_`."""
+    if browser:
+        return ImpersonatingClient(
+            timeout=client.timeout, max_concurrency=client.max_concurrency, proxy=exit_.proxy
+        )
+    return HttpClient(
+        user_agent=client.user_agent,
+        timeout=client.timeout,
+        max_concurrency=client.max_concurrency,
+        proxy=exit_.proxy,
+    )
 
 
 def _profile_key(hit: Hit) -> str:
@@ -550,6 +608,7 @@ async def search_username(
     skip_provider_ids: set[str] | None = None,
     flagged_sites: str | None = None,
     attribute_hits: bool = True,
+    fallback_exit: Exit | None = None,
 ) -> Report:
     """Probe every site for `username`, then run username providers.
 
@@ -564,6 +623,10 @@ async def search_username(
 
     With `attribute_hits` (default), FOUND hits are clustered by corroborating
     profile data (see `attribution.py`), fetching avatars through `client`.
+
+    With `fallback_exit`, probes the primary exit gets bot-walled on (HTTP
+    401/403/429) are retried through that exit; a decisive answer replaces
+    the blocked one and records `extra["exit"]`.
     """
     kwargs: dict[str, Any] = dict(
         only_categories=only_categories, exclude_categories=exclude_categories,
@@ -571,14 +634,22 @@ async def search_username(
         guarded_backoff_seconds=guarded_backoff_seconds, verify_found=verify_found,
         flagged_sites=flagged_sites,
     )
-    if impersonate and impersonation_available():
-        browser = ImpersonatingClient.from_client(client)
-        try:
-            report = await _search_username(username, browser, **kwargs)
-        finally:
-            await browser.aclose()
-    else:
-        report = await _search_username(username, client, **kwargs)
+    use_browser = impersonate and impersonation_available()
+    opened: list[Any] = []
+    try:
+        probe_client = client
+        if use_browser:
+            probe_client = ImpersonatingClient.from_client(client)
+            opened.append(probe_client)
+        if fallback_exit is not None:
+            fallback = _client_for_exit(client, fallback_exit, browser=use_browser)
+            opened.append(fallback)
+            kwargs["fallback"] = (fallback, fallback_exit.label)
+        report = await _search_username(username, probe_client, **kwargs)
+    finally:
+        for opened_client in opened:
+            await opened_client.aclose()
+    report.exit = exit_label(getattr(client, "proxy", None))
 
     if settings is not None:
         from ..providers import query_registered_providers
@@ -607,6 +678,7 @@ async def _search_username(
     guarded_backoff_seconds: float,
     verify_found: bool,
     flagged_sites: str | None = None,
+    fallback: tuple[Any, str] | None = None,
 ) -> Report:
     if not USERNAME_RE.match(username):
         raise ValueError(
@@ -641,8 +713,13 @@ async def _search_username(
     sites_by_name = {s["name"]: s for s in sites}
 
     async def finalise(results: list[Hit]) -> Report:
+        verify_clients: dict[str, Any] = {}
+        if fallback is not None:
+            fallback_client, label = fallback
+            await _retry_blocked(fallback_client, label, sites_by_name, results, username, throttle)
+            verify_clients[label] = fallback_client
         if verify_found:
-            await _verify_found(client, sites_by_name, results, throttle)
+            await _verify_found(client, sites_by_name, results, throttle, verify_clients)
         for hit in results:
             if hit.source in flags:
                 selftest.annotate_hit(hit, flags[hit.source])

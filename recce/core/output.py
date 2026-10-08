@@ -72,6 +72,8 @@ def render_report(
         f"Hits: [bold green]{len(found)}[/]   "
         f"Errors: [red]{len(errors)}[/][/dim]{error_hint if errors else ''}"
     )
+    if report.exit:
+        console.print(f"[dim]Exit: {report.exit}{fallback_note(report)}[/dim]")
     console.print(Rule(style="dim"))
 
     by_category: dict[str, list[Hit]] = defaultdict(list)
@@ -129,6 +131,15 @@ def render_report(
                 border_style="yellow",
             )
         )
+
+
+def fallback_note(report: Report) -> str:
+    retried = [h for h in report.hits if "fallback" in h.extra]
+    if not retried:
+        return ""
+    via = retried[0].extra["fallback"].get("exit")
+    answered = sum(1 for h in retried if h.extra.get("exit"))
+    return f"   Retried {len(retried)} bot-walled probe(s) via {via}: {answered} answered"
 
 
 def render_summary_panel(report: Report) -> None:

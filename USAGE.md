@@ -48,6 +48,39 @@ recce email someone@example.com --json out.json
 
 ---
 
+## Egress control (which network exit each module uses)
+
+Many "unknown" username results are IP-reputation blocks: VPN exits are on
+Cloudflare-style deny lists. recce lets you pick the exit per module, retry
+blocked probes through another one, and records the exit on every report.
+
+```bash
+# ~/.config/recce/.env
+RECCE_EXITS=tor=socks5h://127.0.0.1:9050;home=socks5h://user:pass@10.0.0.2:1080
+RECCE_PROXY=home                     # default exit for every module
+RECCE_DOMAIN_PROXY=direct            # per module: USERNAME / EMAIL / PHONE / DOMAIN
+RECCE_USERNAME_FALLBACK_PROXY=tor    # retry bot-walled username probes here
+```
+
+```bash
+recce doctor                                   # every exit and the public IP it appears as
+recce username somehandle --proxy tor          # one-off exit (name, URL or "direct")
+recce username somehandle --fallback-proxy tor # retry 401/403/429 probes through Tor
+```
+
+- Precedence: `--proxy` > `RECCE_<MODULE>_PROXY` > `RECCE_PROXY` > direct.
+- The fallback retries only probes that came back HTTP 401/403/429. A
+  decisive answer replaces the blocked one, is tagged `via <exit>`, and its
+  made-up-username check runs through the same exit. Use `socks5h://` for Tor
+  so DNS resolves through it too.
+- Every report records its exit (`Exit:` under the query, in JSON as `exit`,
+  and in investigation exports). Hits answered by the fallback carry
+  `extra.exit`. Proxy passwords are masked wherever an exit is shown or saved.
+- The GUI sidebar has the same two settings: *Exit (proxy)* and *Username
+  fallback exit*.
+
+---
+
 ## Attribution clusters (`username`)
 
 A username existing on eight sites does not mean one person owns all eight.
@@ -173,7 +206,7 @@ recce doctor --no-network
 | `--csv out.csv` | Save all hits as CSV (handy for diffing over time) |
 | `--show-misses` | Show "not found" rows (default: hidden) |
 | `--show-errors` | Show probes that errored out (default: hidden) |
-| `--proxy <url>` | Route through an HTTP / HTTPS / SOCKS proxy (e.g. `socks5://127.0.0.1:9050` for Tor) |
+| `--proxy <exit>` | Exit for this run: a proxy URL (`socks5h://127.0.0.1:9050`), an exit name from `RECCE_EXITS`, or `direct` (see *Egress control*) |
 | `--file <path>` | Batch input — one identifier per line, `#` for comments |
 | `--no-providers` | Disable optional API provider integrations |
 | `--skip-provider <ids>` | Skip registry provider IDs such as `shodan,virustotal` |

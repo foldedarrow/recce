@@ -15,6 +15,7 @@ from rich.text import Text
 
 from . import __version__
 from .config import Settings
+from .core.egress import Exit, configured_exits, egress_info, resolve_exit, resolve_fallback
 from .core.http import http_client
 from .core.investigations import INVESTIGATION_STATUSES, InvestigationStore
 from .core.output import (
@@ -284,7 +285,12 @@ def cmd_username(
     json_out: Path | None = typer.Option(None, "--json", help="Write the report(s) to JSON."),
     csv_out: Path | None = typer.Option(None, "--csv", help="Write all hits to a CSV."),
     proxy: str | None = typer.Option(
-        None, "--proxy", help="Route HTTP through a proxy (e.g. socks5://127.0.0.1:9050).",
+        None, "--proxy", help='Exit for this command: proxy URL (socks5h://, http://), an exit name from RECCE_EXITS, or "direct". Default: RECCE_USERNAME_PROXY, then RECCE_PROXY.',
+    ),
+    fallback_proxy: str | None = typer.Option(
+        None, "--fallback-proxy",
+        help="Retry probes the main exit gets bot-walled on (HTTP 401/403/429) through this exit "
+        "(URL, RECCE_EXITS name, e.g. 'tor'). Default: RECCE_USERNAME_FALLBACK_PROXY.",
     ),
     concurrency: int | None = typer.Option(
         None, "--concurrency", "-c", help="Override max parallel requests.",
@@ -333,6 +339,9 @@ def cmd_username(
     if no_providers:
         settings = settings.without_provider_integrations()
     _check_case(case)
+    exit_ = _exit_for("username", proxy)
+    proxy = exit_.proxy
+    fallback = _fallback_for(fallback_proxy)
     if concurrency:
         settings = Settings(**{**settings.__dict__, "max_concurrency": concurrency})
 
@@ -348,6 +357,7 @@ def cmd_username(
 
     n_sites = site_count(include_nsfw=nsfw)
     sub = f"{len(targets)} target(s) · {n_sites} sites" + (" · [yellow]NSFW ON[/]" if nsfw else "")
+    sub += f" · exit: {exit_.label}" + (f" · fallback: {fallback.label}" if fallback else "")
     banner("recce › username", subtitle=sub)
 
     async def run():
@@ -370,6 +380,7 @@ def cmd_username(
                     settings=settings,
                     skip_provider_ids=skip_provider_ids,
                     flagged_sites=flagged_sites,
+                    fallback_exit=fallback,
                 )
 
             return await _run_bounded(run_one, targets, target_concurrency)
@@ -388,6 +399,7 @@ def cmd_username(
         "verify_found": verify,
         "impersonate": impersonate,
         "flagged_sites": flagged_sites,
+        "fallback_exit": fallback,
     }
     all_reports = _render_and_pivot(
         reports,
@@ -415,6 +427,8 @@ def cmd_username(
             "impersonate": impersonate,
             "recursive": recursive,
             "depth": depth if recursive else 0,
+            "exit": exit_.label,
+            "fallback_exit": fallback.label if fallback else None,
         },
     )
     _maybe_export(all_reports, json_out, csv_out)
@@ -438,7 +452,7 @@ def cmd_email(
     json_out: Path | None = typer.Option(None, "--json"),
     csv_out: Path | None = typer.Option(None, "--csv"),
     proxy: str | None = typer.Option(
-        None, "--proxy", help="Route HTTP through a proxy.",
+        None, "--proxy", help='Exit for this command: proxy URL (socks5h://, http://), an exit name from RECCE_EXITS, or "direct". Default: RECCE_EMAIL_PROXY, then RECCE_PROXY.',
     ),
     batch_concurrency: int = typer.Option(
         1, "--batch-concurrency", help="How many emails to process at once.",
@@ -483,6 +497,8 @@ def cmd_email(
     if no_providers:
         settings = settings.without_provider_integrations()
     _check_case(case)
+    exit_ = _exit_for("email", proxy)
+    proxy = exit_.proxy
     skip_provider_ids = _parse_csv_set(skip_provider)
     targets = _read_targets(email, file)
     if deep and not own_emails:
@@ -494,7 +510,7 @@ def cmd_email(
         )
         raise typer.Exit(2)
 
-    sub = f"{len(targets)} target(s)" + ("   · deep mode ON" if deep else "")
+    sub = f"{len(targets)} target(s)" + ("   · deep mode ON" if deep else "") + f" · exit: {exit_.label}"
     banner("recce › email", subtitle=sub)
     _print_key_status(settings, ["hibp_api_key", "emailrep_api_key", "hunter_api_key"])
 
@@ -533,7 +549,7 @@ def cmd_email(
         max_pivots=max_pivots,
         proxy=proxy,
         skip_provider_ids=skip_provider_ids,
-        username_options={},
+        username_options={"fallback_exit": _fallback_for(None)},
         show_misses=show_misses,
         show_errors=show_errors,
     )
@@ -570,7 +586,7 @@ def cmd_phone(
     show_errors: bool = typer.Option(False, "--show-errors"),
     json_out: Path | None = typer.Option(None, "--json"),
     csv_out: Path | None = typer.Option(None, "--csv"),
-    proxy: str | None = typer.Option(None, "--proxy"),
+    proxy: str | None = typer.Option(None, "--proxy", help='Exit for this command: proxy URL (socks5h://, http://), an exit name from RECCE_EXITS, or "direct". Default: RECCE_PHONE_PROXY, then RECCE_PROXY.'),
     batch_concurrency: int = typer.Option(
         1, "--batch-concurrency", help="How many phone numbers to process at once.",
     ),
@@ -591,6 +607,8 @@ def cmd_phone(
     settings = Settings.load()
     if no_providers:
         settings = settings.without_provider_integrations()
+    exit_ = _exit_for("phone", proxy)
+    proxy = exit_.proxy
     skip_provider_ids = _parse_csv_set(skip_provider)
     targets = _read_targets(phone, file)
     if deep and not have_consent:
@@ -601,6 +619,7 @@ def cmd_phone(
         )
         raise typer.Exit(2)
     sub = f"{len(targets)} target(s) · default region: {region}" + ("   · deep mode ON" if deep else "")
+    sub += f" · exit: {exit_.label}"
     banner("recce › phone", subtitle=sub)
     _print_key_status(settings, ["numverify_api_key", "vonage_api_key", "vonage_api_secret"])
 
@@ -666,7 +685,7 @@ def cmd_domain(
     show_errors: bool = typer.Option(False, "--show-errors"),
     json_out: Path | None = typer.Option(None, "--json"),
     csv_out: Path | None = typer.Option(None, "--csv"),
-    proxy: str | None = typer.Option(None, "--proxy"),
+    proxy: str | None = typer.Option(None, "--proxy", help='Exit for this command: proxy URL (socks5h://, http://), an exit name from RECCE_EXITS, or "direct". Default: RECCE_DOMAIN_PROXY, then RECCE_PROXY.'),
     batch_concurrency: int = typer.Option(
         1, "--batch-concurrency", help="How many domains to process at once.",
     ),
@@ -689,6 +708,8 @@ def cmd_domain(
             console.print(f"  [bold]{name}[/]")
         return
 
+    exit_ = _exit_for("domain", proxy)
+    proxy = exit_.proxy
     targets = _read_targets(domain, file)
     only_set = _parse_csv_set(only)
     excl_set = _parse_csv_set(exclude)
@@ -699,6 +720,7 @@ def cmd_domain(
         raise typer.Exit(2)
 
     sub = f"{len(targets)} target(s)" + (" · [yellow]bruteforce ON[/]" if bruteforce else "")
+    sub += f" · exit: {exit_.label}"
     banner("recce › domain", subtitle=sub)
     _print_key_status(settings, ["companies_house_key", "shodan_api_key"])
 
@@ -800,7 +822,10 @@ def cmd_selftest(
     impersonate: bool = typer.Option(
         True, "--impersonate/--no-impersonate", help="Probe with a Chrome fingerprint, as searches do.",
     ),
-    proxy: str | None = typer.Option(None, "--proxy", help="Route HTTP through a proxy."),
+    proxy: str | None = typer.Option(
+        None, "--proxy", help="Exit to test from (URL, RECCE_EXITS name or 'direct'). "
+        "Default: the username exit.",
+    ),
     concurrency: int | None = typer.Option(
         None, "--concurrency", "-c", help="Override max parallel requests.",
     ),
@@ -810,6 +835,7 @@ def cmd_selftest(
     ),
 ) -> None:
     settings = Settings.load()
+    proxy = _exit_for("username", proxy).proxy
     sites = select_sites(
         categories=_parse_csv_set(category), names=_parse_csv_set(only), include_nsfw=nsfw,
     )
@@ -948,6 +974,15 @@ def cmd_doctor(
         )
     else:
         console.print("  [dim]site selftest:[/] never run (`recce selftest`)")
+    console.print("\n[dim]Exits:[/]")
+    exits = configured_exits()
+    ips = asyncio.run(_exit_ips(settings, exits)) if network else {}
+    for use, exit_ in exits:
+        where = ips.get(exit_.proxy, {})
+        seen_as = " · ".join(str(where[k]) for k in ("ip", "country", "org") if where.get(k))
+        if network and not seen_as:
+            seen_as = "[red]unreachable[/]"
+        console.print(f"  {use:>18}  {exit_.label}  [dim]{seen_as}[/]")
     entitlement = "[green]active[/]" if has_pro_entitlement() else "[dim]inactive[/]"
     console.print(f"\n  [dim]Recce Pro entitlement:[/] {entitlement}  [dim]{pro_licence_path()}[/]")
     console.print("\n[dim]Providers:[/]")
@@ -1067,6 +1102,22 @@ async def _follow_pivots(
         return await run_pivots(root, search, depth=depth, max_per_level=max_pivots, seen=seen)
 
 
+def _exit_for(module: str, proxy: str | None) -> Exit:
+    try:
+        return resolve_exit(module, proxy)
+    except ValueError as e:
+        console.print(f"[red]error:[/] {e}")
+        raise typer.Exit(2) from e
+
+
+def _fallback_for(proxy: str | None) -> Exit | None:
+    try:
+        return resolve_fallback(proxy)
+    except ValueError as e:
+        console.print(f"[red]error:[/] {e}")
+        raise typer.Exit(2) from e
+
+
 def _check_case(case_id: str | None) -> None:
     if case_id and _investigation_store().get_investigation(case_id) is None:
         console.print(f"[red]error:[/] no investigation with ID {case_id}")
@@ -1102,6 +1153,27 @@ async def _run_bounded(fn, items: list[str], limit: int) -> list[Report]:
             return await fn(item)
 
     return list(await asyncio.gather(*(runner(item) for item in items)))
+
+
+async def _exit_ips(
+    settings: Settings, exits: list[tuple[str, Exit]]
+) -> dict[str | None, dict]:
+    """Public IP (and country/org) each distinct exit appears as."""
+
+    async def probe(proxy: str | None) -> dict:
+        try:
+            async with http_client(
+                user_agent=settings.user_agent,
+                timeout=min(settings.timeout, 10.0),
+                max_concurrency=2,
+                proxy=proxy,
+            ) as client:
+                return await egress_info(client)
+        except Exception:
+            return {"ip": None}
+
+    proxies = list(dict.fromkeys(e.proxy for _, e in exits))
+    return dict(zip(proxies, await asyncio.gather(*(probe(p) for p in proxies)), strict=True))
 
 
 async def _doctor_network(settings: Settings, proxy: str | None = None) -> list[tuple[str, bool, str]]:
