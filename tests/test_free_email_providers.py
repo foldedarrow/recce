@@ -5,7 +5,7 @@ from recce.config import Settings
 from recce.core.result import Status
 from recce.providers import query_registered_providers
 
-ALL_EMAIL = {"hibp", "hunter", "emailrep", "xposedornot", "leakcheck", "proton", "github-commits"}
+ALL_EMAIL = {"hibp", "hunter", "emailrep", "xposedornot", "leakcheck", "proton", "github-commits", "hudsonrock"}
 
 
 class Response:
@@ -162,3 +162,40 @@ async def test_github_commits_rate_limit_is_skipped() -> None:
     hits, _ = await _run("github-commits", Response(403, {"message": "API rate limit exceeded"}))
     assert hits[0].status is Status.SKIPPED
     assert "GITHUB_TOKEN" in (hits[0].summary or "")
+
+
+@pytest.mark.asyncio
+async def test_hudsonrock_reports_infection_without_credential_material() -> None:
+    payload = {
+        "message": "associated with a computer that was infected",
+        "stealers": [
+            {
+                "date_compromised": "2024-02-16T11:37:48.000Z",
+                "computer_name": "DESKTOP-1",
+                "operating_system": "Windows 11",
+                "malware_path": " C:\\Users\\alice\\AppData\\Local\\Temp\\x.exe",
+                "ip": "203.0.***.***",
+                "total_user_services": 12,
+                "total_corporate_services": 1,
+                "top_passwords": ["hun****"],
+                "top_logins": ["alice@****"],
+            }
+        ],
+    }
+    hits, client = await _run("hudsonrock", Response(200, payload))
+
+    hit = hits[0]
+    assert hit.status is Status.FOUND
+    summary = hit.summary or ""
+    assert "compromised 2024-02-16" in summary
+    assert "machine: DESKTOP-1 / Windows 11" in summary
+    assert "12 personal + 1 corporate" in summary
+    assert "top_passwords" not in hit.extra["stealer"] and "top_logins" not in hit.extra["stealer"]
+    assert "hun" not in str(hit.model_dump())
+    assert client.requests[0][0].endswith("/search-by-email")
+
+
+@pytest.mark.asyncio
+async def test_hudsonrock_clean_identifier_is_not_found() -> None:
+    hits, _ = await _run("hudsonrock", Response(200, {"message": "not associated", "stealers": []}))
+    assert hits[0].status is Status.NOT_FOUND

@@ -88,7 +88,7 @@ async def test_github_identity_extracts_profile_and_commit_identities() -> None:
         }
     )
 
-    hits = await query_registered_providers("alice", "username", client, _settings())  # type: ignore[arg-type]
+    hits = await query_registered_providers("alice", "username", client, _settings(), skip_provider_ids={"hudsonrock"})  # type: ignore[arg-type]
 
     profile, *identities = hits
     assert profile.status is Status.FOUND
@@ -110,5 +110,5 @@ async def test_github_identity_extracts_profile_and_commit_identities() -> None:
 
 @pytest.mark.asyncio
 async def test_github_identity_missing_user() -> None:
-    hits = await query_registered_providers("nobody", "username", RoutingClient({}), _settings())  # type: ignore[arg-type]
+    hits = await query_registered_providers("nobody", "username", RoutingClient({}), _settings(), skip_provider_ids={"hudsonrock"})  # type: ignore[arg-type]
     assert [hit.status for hit in hits] == [Status.NOT_FOUND]
