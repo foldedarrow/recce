@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from .result import Report
+from .result import PivotOrigin, Report
 
 INVESTIGATION_STATUSES = {"open", "closed", "archived"}
 
@@ -356,6 +356,14 @@ class InvestigationStore:
                 "sources_checked": len(report.hits),
             },
         )
+        if report.pivot is not None:
+            # Why this identifier was searched: the hit in an earlier run that
+            # named it. Exports use this to explain attribution.
+            self.append_audit_event(
+                investigation_id,
+                "pivot.run",
+                {"run_id": run["id"], **pivot_edge(json.loads(run["report_json"]))},
+            )
         if report.query_type == "domain" and args.get("bruteforce"):
             self.append_audit_event(
                 investigation_id,
@@ -489,6 +497,7 @@ class InvestigationStore:
             "redacted": redacted,
             "investigation": inv,
             "runs": runs,
+            "pivot_chain": pivot_chain(runs),
             "audit_events": audit,
         }
         if redacted:
@@ -517,6 +526,10 @@ class InvestigationStore:
         ]
         if inv.get("scope_note"):
             lines.extend(["## Scope", "", inv["scope_note"], ""])
+        if payload["pivot_chain"]:
+            lines.extend(["## Pivot chain", ""])
+            lines.extend(f"- {describe_edge(edge)}" for edge in payload["pivot_chain"])
+            lines.append("")
         lines.extend(["## Runs", ""])
         if not runs:
             lines.append("No runs recorded.")
@@ -532,9 +545,11 @@ class InvestigationStore:
                     f"- Recce version: {run['recce_version']}",
                     f"- Sources checked: {len(found)}",
                     f"- Confirmed hits: {len(confirmed)}",
-                    "",
                 ]
             )
+            if report.get("pivot"):
+                lines.append(f"- Discovered via: {_md_cell(describe_origin(report['pivot']))}")
+            lines.append("")
             if confirmed:
                 lines.append("| Source | Category | URL | Notes |")
                 lines.append("|---|---|---|---|")
@@ -579,6 +594,11 @@ class InvestigationStore:
             pdf.heading("Scope", level=2)
             pdf.paragraph(inv["scope_note"])
 
+        if payload["pivot_chain"]:
+            pdf.heading("Pivot chain", level=2)
+            for edge in payload["pivot_chain"]:
+                pdf.bullet(describe_edge(edge))
+
         total_hits = sum(len(run["report"].get("hits", [])) for run in runs)
         confirmed_count = sum(
             len([hit for hit in run["report"].get("hits", []) if hit.get("status") == "found"])
@@ -601,6 +621,8 @@ class InvestigationStore:
             pdf.text(f"Recce version: {run['recce_version']}")
             pdf.text(f"Sources checked: {len(hits)}")
             pdf.text(f"Confirmed hits: {len(confirmed)}")
+            if report.get("pivot"):
+                pdf.paragraph(f"Discovered via: {describe_origin(report['pivot'])}")
             if confirmed:
                 for hit in confirmed[:12]:
                     detail = hit.get("summary") or hit.get("error") or hit.get("url") or ""
@@ -726,6 +748,51 @@ def _redact_payload(payload: dict[str, Any], subjects: list[str]) -> dict[str, A
         return value
 
     return redact(payload)
+
+
+def pivot_chain(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every pivot edge in an investigation, oldest first."""
+    edges = []
+    for run in sorted(runs, key=lambda r: r.get("created_at") or ""):
+        if run["report"].get("pivot"):
+            edges.append({"run_id": run["id"], **pivot_edge(run["report"])})
+    return edges
+
+
+def pivot_edge(report: dict[str, Any]) -> dict[str, Any]:
+    origin = report.get("pivot") or {}
+    return {
+        "from_type": origin.get("from_type"),
+        "from_query": origin.get("from_query"),
+        "to_type": report.get("query_type"),
+        "to_query": report.get("query"),
+        "source": origin.get("source"),
+        "field": origin.get("field"),
+        "hit_url": origin.get("hit_url"),
+        "depth": origin.get("depth"),
+    }
+
+
+def describe_origin(origin: PivotOrigin | dict[str, Any]) -> str:
+    if isinstance(origin, PivotOrigin):
+        origin = origin.model_dump()
+    text = (
+        f"{origin.get('source')} hit ({origin.get('field')}) in the "
+        f"{origin.get('from_type')} search for {origin.get('from_query')}"
+    )
+    if origin.get("hit_url"):
+        text += f" - {origin['hit_url']}"
+    return text
+
+
+def describe_edge(edge: dict[str, Any]) -> str:
+    return (
+        f"{edge.get('from_type')} {edge.get('from_query')} -> "
+        f"{edge.get('to_type')} {edge.get('to_query')} "
+        f"(via {edge.get('source')}, {edge.get('field')}"
+        + (f", {edge['hit_url']}" if edge.get("hit_url") else "")
+        + ")"
+    )
 
 
 def delete_confirmation_matches(case_name: str, typed_name: str) -> bool:

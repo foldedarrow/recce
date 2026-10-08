@@ -88,6 +88,7 @@ class GitHubIdentityProvider(Provider):
         parts.append(f"joined {created}" if created else "account exists")
         parts.append(f"{profile.get('public_repos', 0)} repos · {profile.get('followers', 0)} followers")
         usernames = [fields["twitter"]] if fields["twitter"] else []
+        emails = [fields["email"]] if fields["email"] else []
         return self.make_hit(
             "identity",
             Status.FOUND,
@@ -95,7 +96,13 @@ class GitHubIdentityProvider(Provider):
             summary=" · ".join(parts),
             confidence=0.9,
             elapsed_ms=elapsed,
-            extra={**fields, "created_at": profile.get("created_at"), "type": profile.get("type"), "usernames": usernames},
+            extra={
+                **fields,
+                "created_at": profile.get("created_at"),
+                "type": profile.get("type"),
+                "usernames": usernames,
+                "emails": emails,
+            },
         )
 
     async def _commit_identities(
