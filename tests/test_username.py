@@ -232,15 +232,32 @@ def test_dedupe_by_profile_keeps_most_decisive_hit() -> None:
     assert out[0].extra["also_checked_as"] == ["GitHub"]
 
 
-def test_custom_sites_override_wmn_case_insensitively(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_custom_sites_override_exact_names_and_yield_on_case_only_duplicates(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     import recce.modules.username as username
 
-    monkeypatch.setattr(username, "_load_wmn_sites", lambda: [{"name": "trakt", "category": "video", "url": "u", "method": "wmn"}])
-    monkeypatch.setattr(username, "_load_custom_sites", lambda: [{"name": "Trakt", "category": "video", "url": "u", "method": "status"}])
+    monkeypatch.setattr(
+        username,
+        "_load_wmn_sites",
+        lambda: [
+            {"name": "tumblr", "category": "images", "url": "u", "method": "wmn"},
+            {"name": "GitLab", "category": "coding", "url": "u", "method": "wmn"},
+        ],
+    )
+    monkeypatch.setattr(
+        username,
+        "_load_custom_sites",
+        lambda: [
+            {"name": "Tumblr", "category": "social", "url": "u", "method": "status"},
+            {"name": "GitLab", "category": "dev", "url": "u", "method": "status"},
+        ],
+    )
 
-    sites = username._load_sites()
+    sites = {site["name"]: site["method"] for site in username._load_sites()}
 
-    assert [site["name"] for site in sites] == ["Trakt"]
+    # Case-only duplicate: WMN's maintained entry wins, ours is dropped.
+    assert sites["tumblr"] == "wmn" and "Tumblr" not in sites
+    # Exact name: the custom entry is a deliberate override.
+    assert sites["GitLab"] == "status"
 
 
 @pytest.mark.asyncio

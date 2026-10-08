@@ -207,10 +207,14 @@ def _load_sites(*, include_nsfw: bool = False) -> list[dict[str, Any]]:
     """Merge WMN + recce custom sites. Custom entries override by `name`."""
     wmn_sites = _load_wmn_sites()
     custom_sites = _load_custom_sites()
-    # WMN and recce spell some names differently ("Trakt" / "trakt"), so match
-    # case-insensitively or both definitions run and double-report.
-    custom_names = {s["name"].lower() for s in custom_sites}
-    merged = [s for s in wmn_sites if s["name"].lower() not in custom_names] + custom_sites
+    # An exact name match is a deliberate override of the WMN entry. A match
+    # that differs only in case ("Tumblr" / "tumblr") is an accidental
+    # duplicate: keep WMN's actively maintained definition and drop ours, or
+    # both run and double-report.
+    custom_names = {s["name"] for s in custom_sites}
+    wmn_kept = [s for s in wmn_sites if s["name"] not in custom_names]
+    wmn_lower = {s["name"].lower() for s in wmn_kept}
+    merged = wmn_kept + [s for s in custom_sites if s["name"].lower() not in wmn_lower]
 
     if not include_nsfw:
         merged = [s for s in merged if not NSFW_CAT_RE.search(s.get("category", ""))]
