@@ -80,6 +80,7 @@ $EDITOR .env
 | `HIBP_API_KEY` | [haveibeenpwned.com/API/Key](https://haveibeenpwned.com/API/Key) | ~$4 / mo | Per-email breach history |
 | `HUNTER_API_KEY` | [hunter.io/api](https://hunter.io/api) | Free 25 / mo | Email verification + sources |
 | `NUMVERIFY_API_KEY` | [numverify.com](https://numverify.com) | Free 100 / mo | Phone carrier / location |
+| `BRAVE_API_KEY` / `SERPAPI_API_KEY` | [brave.com/search/api](https://brave.com/search/api/) / [serpapi.com](https://serpapi.com) | Paid / small free tier | Pro: phone web search returns pages mentioning the number (the number is sent to the vendor) |
 | `EMAILREP_API_KEY` | [emailrep.io](https://emailrep.io) | Free / paid | Higher rate-limit on reputation |
 | `LEAKCHECK_API_KEY` | [leakcheck.io](https://leakcheck.io) | Paid | (planned) extra breach data |
 | `COMPANIES_HOUSE_KEY` | [Companies House](https://developer.company-information.service.gov.uk/) | Free | UK company lookup for domains |

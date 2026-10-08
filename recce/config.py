@@ -99,6 +99,8 @@ class Settings:
     censys_api_token: str | None = None
     censys_org_id: str | None = None
     github_token: str | None = None
+    brave_api_key: str | None = None
+    serpapi_api_key: str | None = None
 
     @classmethod
     def load(cls) -> Settings:
@@ -121,6 +123,8 @@ class Settings:
             censys_api_token=os.getenv("CENSYS_API_TOKEN") or None,
             censys_org_id=os.getenv("CENSYS_ORG_ID") or None,
             github_token=os.getenv("GITHUB_TOKEN") or None,
+            brave_api_key=os.getenv("BRAVE_API_KEY") or None,
+            serpapi_api_key=os.getenv("SERPAPI_API_KEY") or None,
         )
 
     def has(self, key: str) -> bool:

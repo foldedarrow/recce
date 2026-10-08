@@ -24,6 +24,7 @@ from .proton import ProtonKeyProvider
 from .shodan import ShodanProvider
 from .vonage import VonageNumberInsightProvider
 from .wayback_profiles import WaybackProfilesProvider
+from .websearch import WebSearchProvider
 from .xposedornot import XposedOrNotProvider
 
 PROVIDERS: tuple[Provider, ...] = (
@@ -49,6 +50,7 @@ PROVIDERS: tuple[Provider, ...] = (
     HunterProvider(),
     NumVerifyProvider(),
     VonageNumberInsightProvider(),
+    WebSearchProvider(),
     EmailRepProvider(),
     ShodanProvider(),
     Provider(

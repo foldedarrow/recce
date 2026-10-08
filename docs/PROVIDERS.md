@@ -30,6 +30,7 @@ permissions where the host platform supports POSIX file modes.
 | Hunter.io | Free | Email | `HUNTER_API_KEY` | Provider-native email query; domain planned |
 | NumVerify | Free | Phone | `NUMVERIFY_API_KEY` | Provider-native live query |
 | Vonage Number Insight | Pro | Phone | `VONAGE_API_KEY`, `VONAGE_API_SECRET` | Provider-native live HLR: ported status, current/original carrier, reachability, roaming |
+| Web search | Pro | Phone | `BRAVE_API_KEY` or `SERPAPI_API_KEY` | Three searches per number (plain, social/classified sites, spam-reputation sites) across all its formats; each page listed once, marked confirmed when its title/snippet contains the number. The number is sent to the search vendor as a query |
 | EmailRep | Free | Email | `EMAILREP_API_KEY` | Provider-native live query; key optional |
 | Shodan | Pro | Domain | `SHODAN_API_KEY` | Provider-native live query; Recce Pro gated; DNS API needs a paid Shodan Membership; free keys fall back to per-IP host lookups (ports, CVEs, org) for the domain's public IPs — Shodan only allows some IPs on the free plan, the rest are listed as restricted |
 | VirusTotal | Pro | Domain, Email | `VIRUSTOTAL_API_KEY` | Gated, query implementation planned |

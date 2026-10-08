@@ -840,6 +840,8 @@ def _api_keys_mode() -> None:
         ("EMAILREP_API_KEY", "EmailRep", settings.emailrep_api_key),
         ("COMPANIES_HOUSE_KEY", "Companies House", settings.companies_house_key),
         ("SHODAN_API_KEY", "Shodan", settings.shodan_api_key),
+        ("BRAVE_API_KEY", "Brave Search (phone web search)", settings.brave_api_key),
+        ("SERPAPI_API_KEY", "SerpAPI (phone web search)", settings.serpapi_api_key),
         ("VIRUSTOTAL_API_KEY", "VirusTotal", settings.virustotal_api_key),
         ("SECURITYTRAILS_API_KEY", "SecurityTrails", settings.securitytrails_api_key),
         ("CENSYS_API_TOKEN", "Censys personal access token", settings.censys_api_token),

@@ -110,9 +110,11 @@ client). Still open, below.
 - **Phone:** Ofcom numbering data — **shipped**: an offline index of Ofcom's
   weekly allocation files (`recce/modules/ofcom.py`, refreshed by
   `recce update`) gives +44 numbers their originally allocated provider,
-  block status and area. Still open: a search-API provider (Brave Search /
-  Google CSE / SerpAPI) so the dork links return real results automatically
-  instead of needing clicks.
+  block status and area. Search-API provider — **shipped** (Pro,
+  `recce/providers/websearch.py`, `BRAVE_API_KEY` or `SERPAPI_API_KEY`): three
+  searches per number return the pages that mention it, confirmed when the
+  snippet contains the digits. Google CSE is not supported (closed to new
+  customers).
 - **Domain:** implement the VirusTotal and SecurityTrails placeholders
   (needs keys to verify live).
 

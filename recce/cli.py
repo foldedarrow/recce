@@ -1112,6 +1112,8 @@ def cmd_doctor(
         "LEAKCHECK_API_KEY": settings.leakcheck_api_key,
         "COMPANIES_HOUSE_KEY": settings.companies_house_key,
         "SHODAN_API_KEY": settings.shodan_api_key,
+        "BRAVE_API_KEY": settings.brave_api_key,
+        "SERPAPI_API_KEY": settings.serpapi_api_key,
         "VIRUSTOTAL_API_KEY": settings.virustotal_api_key,
         "SECURITYTRAILS_API_KEY": settings.securitytrails_api_key,
         "CENSYS_API_TOKEN": settings.censys_api_token,
