@@ -9,6 +9,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Four keyless email sources: **XposedOrNot** (breaches, exposed data types,
+  plaintext-password flag), **LeakCheck** public API (breach sources incl.
+  infostealer logs — field kinds only, never values), **Proton key server**
+  (is it a Proton account, and the oldest key date ≈ account age), and
+  **GitHub commit search** (email → GitHub logins, author names, repos;
+  optional `GITHUB_TOKEN` raises the rate limit).
+- Username search re-checks every hit with a made-up username and downgrades
+  sites that "find" anything (`--no-verify` to skip); duplicate definitions of
+  the same profile collapse into one hit.
+- Username probes use a real Chrome TLS fingerprint via curl_cffi
+  (`--no-impersonate` for recce's honest UA), getting past many bot walls.
 - Shodan free-plan fallback: when `/dns/domain` is refused for lack of a
   Membership, `recce domain` looks up the domain's public IPs (up to 4) via
   `/shodan/host` instead — org/ASN, open ports, CVEs, tags. The free plan only

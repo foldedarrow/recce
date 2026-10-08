@@ -98,6 +98,7 @@ class Settings:
     vonage_api_secret: str | None = None
     censys_api_token: str | None = None
     censys_org_id: str | None = None
+    github_token: str | None = None
 
     @classmethod
     def load(cls) -> Settings:
@@ -119,6 +120,7 @@ class Settings:
             vonage_api_secret=os.getenv("VONAGE_API_SECRET") or None,
             censys_api_token=os.getenv("CENSYS_API_TOKEN") or None,
             censys_org_id=os.getenv("CENSYS_ORG_ID") or None,
+            github_token=os.getenv("GITHUB_TOKEN") or None,
         )
 
     def has(self, key: str) -> bool:

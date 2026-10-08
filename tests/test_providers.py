@@ -21,6 +21,10 @@ def _isolate_pro_entitlement(tmp_path, monkeypatch):  # type: ignore[no-untyped-
     yield
 
 
+# Keyless email providers; tests targeting one specific provider skip these.
+OTHER_FREE_EMAIL = {"xposedornot", "leakcheck", "proton", "github-commits"}
+
+
 def _settings(**overrides) -> Settings:  # type: ignore[no-untyped-def]
     data = {
         "hibp_api_key": None,
@@ -104,7 +108,7 @@ async def test_hibp_provider_returns_not_configured_skip() -> None:
         "email",
         DummyClient(None),  # type: ignore[arg-type]
         _settings(),
-        skip_provider_ids={"hunter", "emailrep"},
+        skip_provider_ids={"hunter", "emailrep", *OTHER_FREE_EMAIL},
     )
 
     hibp_hits = [hit for hit in hits if hit.source == "Have I Been Pwned"]
@@ -126,7 +130,7 @@ async def test_hibp_provider_queries_api_when_configured() -> None:
         "email",
         client,  # type: ignore[arg-type]
         _settings(hibp_api_key="test-key"),
-        skip_provider_ids={"hunter", "emailrep"},
+        skip_provider_ids={"hunter", "emailrep", *OTHER_FREE_EMAIL},
     )
 
     hibp_hits = [hit for hit in hits if hit.source == "Have I Been Pwned"]
@@ -145,7 +149,7 @@ async def test_hibp_provider_can_be_skipped() -> None:
         "email",
         client,  # type: ignore[arg-type]
         _settings(hibp_api_key="test-key"),
-        skip_provider_ids={"hibp", "hunter", "emailrep"},
+        skip_provider_ids={"hibp", "hunter", "emailrep", *OTHER_FREE_EMAIL},
     )
 
     assert all(hit.source != "Have I Been Pwned" for hit in hits)
@@ -171,7 +175,7 @@ async def test_emailrep_provider_queries_without_key() -> None:
         "email",
         client,  # type: ignore[arg-type]
         _settings(),
-        skip_provider_ids={"hibp", "hunter"},
+        skip_provider_ids={"hibp", "hunter", *OTHER_FREE_EMAIL},
     )
 
     assert len(hits) == 1
@@ -191,7 +195,7 @@ async def test_emailrep_provider_sends_key_when_configured() -> None:
         "email",
         client,  # type: ignore[arg-type]
         _settings(emailrep_api_key="rep-key"),
-        skip_provider_ids={"hibp", "hunter"},
+        skip_provider_ids={"hibp", "hunter", *OTHER_FREE_EMAIL},
     )
 
     assert client.requests[0][1]["headers"]["Key"] == "rep-key"
@@ -204,7 +208,7 @@ async def test_hunter_provider_returns_not_configured_skip() -> None:
         "email",
         DummyClient(None),  # type: ignore[arg-type]
         _settings(),
-        skip_provider_ids={"hibp", "emailrep"},
+        skip_provider_ids={"hibp", "emailrep", *OTHER_FREE_EMAIL},
     )
 
     assert len(hits) == 1
@@ -232,7 +236,7 @@ async def test_hunter_provider_queries_api_when_configured() -> None:
         "email",
         client,  # type: ignore[arg-type]
         _settings(hunter_api_key="hunter-key"),
-        skip_provider_ids={"hibp", "emailrep"},
+        skip_provider_ids={"hibp", "emailrep", *OTHER_FREE_EMAIL},
     )
 
     assert len(hits) == 1

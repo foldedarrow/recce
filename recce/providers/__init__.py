@@ -12,11 +12,15 @@ from recce.core.result import Hit, Status
 from .base import Provider, ProviderContext, ProviderStatus, append_provider_gate_hits
 from .censys import CensysProvider
 from .emailrep import EmailRepProvider
+from .github_commits import GitHubCommitsProvider
 from .hibp import HIBPProvider
 from .hunter import HunterProvider
+from .leakcheck import LeakCheckProvider
 from .numverify import NumVerifyProvider
+from .proton import ProtonKeyProvider
 from .shodan import ShodanProvider
 from .vonage import VonageNumberInsightProvider
+from .xposedornot import XposedOrNotProvider
 
 PROVIDERS: tuple[Provider, ...] = (
     Provider(
@@ -30,6 +34,10 @@ PROVIDERS: tuple[Provider, ...] = (
         notes="UK company lookup",
     ),
     HIBPProvider(),
+    XposedOrNotProvider(),
+    LeakCheckProvider(),
+    ProtonKeyProvider(),
+    GitHubCommitsProvider(),
     HunterProvider(),
     NumVerifyProvider(),
     VonageNumberInsightProvider(),
