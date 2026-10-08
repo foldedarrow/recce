@@ -183,3 +183,75 @@ def test_corrupt_wmn_cache_falls_back_to_bundled_snapshot(tmp_path, monkeypatch)
     sites = username_mod._load_wmn_sites()
 
     assert len(sites) > 100
+
+
+@pytest.mark.asyncio
+async def test_canary_downgrades_site_that_finds_every_username(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from recce.core.result import Hit
+    from recce.modules.username import _verify_found
+
+    class FakeClient:
+        async def get(self, url: str, **kwargs):
+            request = httpx.Request("GET", url)
+            # "Always200" answers 200 for anything; "Strict" only knows alice.
+            ok = "always" in url or url.endswith("/alice")
+            return httpx.Response(200 if ok else 404, text="", request=request)
+
+    sites = {
+        name: {"name": name, "category": "dev", "url": f"https://{host}/{{u}}", "method": "status", "found": [200], "missing": [404]}
+        for name, host in (("Always200", "always.test"), ("Strict", "strict.test"))
+    }
+    hits = [
+        Hit(source="Always200", status=Status.FOUND, url="https://always.test/alice", confidence=0.85),
+        Hit(source="Strict", status=Status.FOUND, url="https://strict.test/alice", confidence=0.85),
+    ]
+
+    await _verify_found(FakeClient(), sites, hits, throttle=None)  # type: ignore[arg-type]
+
+    always, strict = hits
+    assert always.status is Status.UNKNOWN
+    assert "made-up username" in (always.summary or "")
+    assert always.extra["canary"]["status"] == "found"
+    assert strict.status is Status.FOUND
+    assert strict.extra["canary"]["status"] == "not_found"
+
+
+def test_dedupe_by_profile_keeps_most_decisive_hit() -> None:
+    from recce.core.result import Hit
+    from recce.modules.username import _dedupe_by_profile
+
+    hits = [
+        Hit(source="GitHub", status=Status.UNKNOWN, url="https://github.com/alice"),
+        Hit(source="GitHub (User)", status=Status.FOUND, url="https://www.github.com/alice/"),
+        Hit(source="GitLab", status=Status.NOT_FOUND, url="https://gitlab.com/alice"),
+    ]
+
+    out = _dedupe_by_profile(hits)
+
+    assert [hit.source for hit in out] == ["GitHub (User)", "GitLab"]
+    assert out[0].extra["also_checked_as"] == ["GitHub"]
+
+
+def test_custom_sites_override_wmn_case_insensitively(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import recce.modules.username as username
+
+    monkeypatch.setattr(username, "_load_wmn_sites", lambda: [{"name": "trakt", "category": "video", "url": "u", "method": "wmn"}])
+    monkeypatch.setattr(username, "_load_custom_sites", lambda: [{"name": "Trakt", "category": "video", "url": "u", "method": "status"}])
+
+    sites = username._load_sites()
+
+    assert [site["name"] for site in sites] == ["Trakt"]
+
+
+@pytest.mark.asyncio
+async def test_check_site_reports_transport_error_reason() -> None:
+    class FakeClient:
+        async def request_detailed(self, method: str, url: str, **kwargs):
+            return None, "DNS lookup failed (blocked by local resolver, or domain gone)"
+
+    site = {"name": "Example", "category": "dev", "url": "https://example.test/{u}", "method": "status"}
+
+    hit = await _check_site(FakeClient(), site, "alice")  # type: ignore[arg-type]
+
+    assert hit.status is Status.ERROR
+    assert hit.error is not None and hit.error.startswith("DNS lookup failed")

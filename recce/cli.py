@@ -220,6 +220,10 @@ def cmd_username(
     nsfw: bool = typer.Option(
         False, "--nsfw", help="Include adult / NSFW sites (skipped by default).",
     ),
+    verify: bool = typer.Option(
+        True, "--verify/--no-verify",
+        help="Re-check each hit with a made-up username and downgrade sites that 'find' anything.",
+    ),
     show_misses: bool = typer.Option(
         False, "--show-misses", help="Print every site checked, including 'not found'.",
     ),
@@ -288,6 +292,7 @@ def cmd_username(
                     exclude_categories=excl_set,
                     include_nsfw=nsfw,
                     per_domain_rate=per_domain_rate,
+                    verify_found=verify,
                 )
 
             return await _run_bounded(run_one, targets, target_concurrency)

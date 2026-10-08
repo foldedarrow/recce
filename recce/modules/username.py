@@ -30,6 +30,8 @@ import asyncio
 import json
 import random
 import re
+import secrets
+import string
 import tempfile
 import time
 from importlib import resources
@@ -58,6 +60,8 @@ GUARDED_HTTP_STATUSES = {401, 403, 429}
 DEFAULT_PER_DOMAIN_RATE = 1.5
 DEFAULT_GUARDED_BACKOFF_SECONDS = 3.0
 DEFAULT_THROTTLE_JITTER_SECONDS = 0.25
+# Status precedence when several site definitions point at the same profile.
+_STATUS_RANK = {Status.FOUND: 0, Status.NOT_FOUND: 1, Status.UNKNOWN: 2, Status.ERROR: 3, Status.SKIPPED: 4}
 
 
 class PerDomainThrottle:
@@ -203,8 +207,10 @@ def _load_sites(*, include_nsfw: bool = False) -> list[dict[str, Any]]:
     """Merge WMN + recce custom sites. Custom entries override by `name`."""
     wmn_sites = _load_wmn_sites()
     custom_sites = _load_custom_sites()
-    custom_names = {s["name"] for s in custom_sites}
-    merged = [s for s in wmn_sites if s["name"] not in custom_names] + custom_sites
+    # WMN and recce spell some names differently ("Trakt" / "trakt"), so match
+    # case-insensitively or both definitions run and double-report.
+    custom_names = {s["name"].lower() for s in custom_sites}
+    merged = [s for s in wmn_sites if s["name"].lower() not in custom_names] + custom_sites
 
     if not include_nsfw:
         merged = [s for s in merged if not NSFW_CAT_RE.search(s.get("category", ""))]
@@ -369,20 +375,16 @@ async def _check_site(
     try:
         if throttle is not None:
             await throttle.wait(probe_url)
+        kwargs: dict[str, Any] = {"headers": headers, "follow_redirects": follow_redirects}
         if method == "wmn_post":
-            payload = json.loads(_format(json.dumps(site["post_body"]), username))
-            resp = await client.post(probe_url, json=payload, headers=headers,
-                                     follow_redirects=follow_redirects)
+            kwargs["json"] = json.loads(_format(json.dumps(site["post_body"]), username))
+            verb = "POST"
         elif method == "post_json":
-            payload = json.loads(_format(json.dumps(site["post"]), username))
-            resp = await client.post(probe_url, json=payload, headers=headers,
-                                     follow_redirects=follow_redirects)
-        elif use_head:
-            resp = await client.head(probe_url, headers=headers,
-                                     follow_redirects=follow_redirects)
+            kwargs["json"] = json.loads(_format(json.dumps(site["post"]), username))
+            verb = "POST"
         else:
-            resp = await client.get(probe_url, headers=headers,
-                                    follow_redirects=follow_redirects)
+            verb = "HEAD" if use_head else "GET"
+        resp, transport_error = await _send(client, verb, probe_url, **kwargs)
     except Exception as e:
         return Hit(
             source=site["name"],
@@ -400,7 +402,7 @@ async def _check_site(
             category=site.get("category", "general"),
             status=Status.ERROR,
             url=profile_url,
-            error="network error / timeout",
+            error=transport_error or "network error / timeout",
             elapsed_ms=elapsed_ms,
         )
 
@@ -437,6 +439,66 @@ async def _check_site(
     )
 
 
+async def _send(client: Any, verb: str, url: str, **kwargs: Any) -> tuple[Any, str | None]:
+    """Send via `request_detailed` when the client has it (so failures carry a
+    reason such as "DNS lookup failed"), else fall back to get/post/head."""
+    detailed = getattr(client, "request_detailed", None)
+    if detailed is not None:
+        return await detailed(verb, url, **kwargs)
+    resp = await getattr(client, verb.lower())(url, **kwargs)
+    return resp, None
+
+
+def _canary_username() -> str:
+    """A username that almost certainly does not exist anywhere."""
+    alphabet = string.ascii_lowercase + string.digits
+    return "q" + "".join(secrets.choice(alphabet) for _ in range(11))
+
+
+async def _verify_found(
+    client: HttpClient,
+    sites_by_name: dict[str, dict[str, Any]],
+    hits: list[Hit],
+    throttle: PerDomainThrottle | None,
+) -> None:
+    """Re-probe every FOUND site with a made-up username. A site that also
+    "finds" the made-up account reports existence for any input, so the hit
+    is unverifiable and is downgraded (Maigret-style false-positive check)."""
+    canary = _canary_username()
+    found = [hit for hit in hits if hit.status is Status.FOUND and hit.source in sites_by_name]
+
+    async def check(hit: Hit) -> None:
+        probe = await _check_site(client, sites_by_name[hit.source], canary, throttle=throttle)
+        hit.extra["canary"] = {"username": canary, "status": probe.status.value}
+        if probe.status is Status.FOUND:
+            hit.status = Status.UNKNOWN
+            hit.summary = "unverifiable — site also reports a made-up username as existing"
+            hit.confidence = 0.2
+
+    await asyncio.gather(*(check(hit) for hit in found))
+
+
+def _profile_key(hit: Hit) -> str:
+    url = (hit.url or "").lower().split("://", 1)[-1].removeprefix("www.").rstrip("/")
+    return url or hit.source.lower()
+
+
+def _dedupe_by_profile(hits: list[Hit]) -> list[Hit]:
+    """Collapse several definitions of the same profile (e.g. "GitHub" and
+    "GitHub (User)") into one hit, keeping the most decisive status."""
+    groups: dict[str, list[Hit]] = {}
+    for hit in hits:
+        groups.setdefault(_profile_key(hit), []).append(hit)
+    out: list[Hit] = []
+    for group in groups.values():
+        best = min(group, key=lambda h: (_STATUS_RANK.get(h.status, 9), -h.confidence))
+        others = sorted({h.source for h in group if h is not best})
+        if others:
+            best.extra["also_checked_as"] = others
+        out.append(best)
+    return out
+
+
 async def search_username(
     username: str,
     client: HttpClient,
@@ -447,6 +509,7 @@ async def search_username(
     show_progress: bool = True,
     per_domain_rate: float = DEFAULT_PER_DOMAIN_RATE,
     guarded_backoff_seconds: float = DEFAULT_GUARDED_BACKOFF_SECONDS,
+    verify_found: bool = True,
 ) -> Report:
     if not USERNAME_RE.match(username):
         raise ValueError(
@@ -465,12 +528,19 @@ async def search_username(
         guarded_backoff_seconds=guarded_backoff_seconds,
     )
 
-    if not show_progress:
-        results = await asyncio.gather(*(_check_site(client, s, username, throttle=throttle) for s in sites))
-        for r in results:
+    sites_by_name = {s["name"]: s for s in sites}
+
+    async def finalise(results: list[Hit]) -> Report:
+        if verify_found:
+            await _verify_found(client, sites_by_name, results, throttle)
+        for r in _dedupe_by_profile(results):
             report.add(r)
         report.finish()
         return report
+
+    if not show_progress:
+        results = await asyncio.gather(*(_check_site(client, s, username, throttle=throttle) for s in sites))
+        return await finalise(list(results))
 
     with Progress(
         SpinnerColumn(),
@@ -492,11 +562,9 @@ async def search_username(
             return hit
 
         results = await asyncio.gather(*(runner(s) for s in sites))
-        for r in results:
-            report.add(r)
-
-    report.finish()
-    return report
+        if verify_found:
+            progress.update(task, description="Verifying hits against a made-up username…")
+        return await finalise(list(results))
 
 
 # ---------------------------------------------------------------------------

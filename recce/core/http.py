@@ -61,6 +61,30 @@ class HttpClient:
         data: Any | None = None,
         follow_redirects: bool = True,
     ) -> httpx.Response | None:
+        resp, _ = await self.request_detailed(
+            method,
+            url,
+            headers=headers,
+            params=params,
+            json=json,
+            data=data,
+            follow_redirects=follow_redirects,
+        )
+        return resp
+
+    async def request_detailed(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+        json: Any | None = None,
+        data: Any | None = None,
+        follow_redirects: bool = True,
+    ) -> tuple[httpx.Response | None, str | None]:
+        """Like `request`, but on failure also returns a short reason
+        ("DNS lookup failed", "timeout", ...) instead of a bare None."""
         last_exc: Exception | None = None
         for attempt in range(self._retries + 1):
             try:
@@ -74,16 +98,16 @@ class HttpClient:
                         data=data,
                         follow_redirects=follow_redirects,
                     )
-                return resp
+                return resp, None
             except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPError) as e:
                 last_exc = e
                 if attempt < self._retries:
                     await asyncio.sleep(0.4 * (attempt + 1))
                     continue
                 log.debug("HTTP %s %s failed after retries: %s", method, url, e)
-                return None
+                return None, describe_transport_error(e)
         log.debug("HTTP gave up: %s", last_exc)
-        return None
+        return None, describe_transport_error(last_exc) if last_exc else "network error"
 
     async def get(self, url: str, **kw: Any) -> httpx.Response | None:
         return await self.request("GET", url, **kw)
@@ -93,6 +117,36 @@ class HttpClient:
 
     async def post(self, url: str, **kw: Any) -> httpx.Response | None:
         return await self.request("POST", url, **kw)
+
+
+_DNS_ERROR_MARKERS = (
+    "name or service not known",
+    "nodename nor servname",
+    "temporary failure in name resolution",
+    "no address associated",
+    "getaddrinfo failed",
+    "[errno -2]",
+    "[errno -3]",
+    "[errno 8]",
+)
+
+
+def describe_transport_error(exc: BaseException) -> str:
+    """Turn an httpx exception into a short, user-facing failure reason."""
+    text = str(exc).lower()
+    if isinstance(exc, httpx.TimeoutException):
+        return "timeout"
+    if any(marker in text for marker in _DNS_ERROR_MARKERS):
+        return "DNS lookup failed (blocked by local resolver, or domain gone)"
+    if "certificate" in text or "ssl" in text or "tls" in text:
+        return "TLS/certificate error"
+    if "refused" in text:
+        return "connection refused"
+    if "reset" in text or "disconnected" in text or "closed" in text:
+        return "connection reset by server"
+    if isinstance(exc, httpx.ConnectError):
+        return "connection failed"
+    return "network error"
 
 
 @asynccontextmanager
