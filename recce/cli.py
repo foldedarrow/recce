@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import httpx
 import typer
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from rich.text import Text
 
@@ -30,6 +32,14 @@ from .modules.domain import DOMAIN_CATEGORIES, domain_consent_error, search_doma
 from .modules.email import search_email
 from .modules.email_deep import deep_email_probes
 from .modules.phone import search_phone
+from .modules.selftest import (
+    FLAGGED_POLICIES,
+    STATUSES,
+    last_run_summary,
+    run_selftest,
+    save_report,
+    select_sites,
+)
 from .modules.username import (
     DEFAULT_PER_DOMAIN_RATE,
     WMN_REMOTE,
@@ -261,8 +271,15 @@ def cmd_username(
     skip_provider: str | None = typer.Option(
         None, "--skip-provider", help="Comma-separated provider IDs to skip.",
     ),
+    flagged_sites: str | None = typer.Option(
+        None, "--flagged-sites",
+        help="Sites the last `recce selftest` caught reporting made-up usernames: "
+        "skip (default), mark (probe but downgrade hits) or off. Env: RECCE_FLAGGED_SITES.",
+    ),
 ) -> None:
     settings = Settings.load()
+    if flagged_sites is not None and flagged_sites.lower() not in FLAGGED_POLICIES:
+        raise typer.BadParameter(f"must be one of {', '.join(FLAGGED_POLICIES)}", param_hint="--flagged-sites")
     if no_providers:
         settings = settings.without_provider_integrations()
     if concurrency:
@@ -301,6 +318,7 @@ def cmd_username(
                     impersonate=impersonate,
                     settings=settings,
                     skip_provider_ids=skip_provider_ids,
+                    flagged_sites=flagged_sites,
                 )
 
             return await _run_bounded(run_one, targets, target_concurrency)
@@ -627,6 +645,138 @@ def cmd_update(
     )
 
 
+_HEALTH_STYLE = {
+    "healthy": "green",
+    "false_positive": "bold red",
+    "false_negative": "red",
+    "blocked": "yellow",
+    "error": "magenta",
+    "unverified": "dim",
+}
+
+
+@app.command(
+    "selftest",
+    help="Check every username site definition against a known account and a made-up one.",
+)
+def cmd_selftest(
+    category: str | None = typer.Option(
+        None, "--category", "-C", help="Comma-separated categories to test (e.g. 'dev,social').",
+    ),
+    only: str | None = typer.Option(
+        None, "--only", help="Comma-separated site names to test (case-insensitive).",
+    ),
+    nsfw: bool = typer.Option(False, "--nsfw", help="Include adult / NSFW sites."),
+    json_output: bool = typer.Option(
+        False, "--json", help="Print the full report as JSON instead of tables.",
+    ),
+    show_all: bool = typer.Option(False, "--all", help="List healthy and unverified sites too."),
+    save: bool = typer.Option(
+        True, "--save/--no-save",
+        help="Store results in ~/.cache/recce/selftest.json (username searches read it).",
+    ),
+    impersonate: bool = typer.Option(
+        True, "--impersonate/--no-impersonate", help="Probe with a Chrome fingerprint, as searches do.",
+    ),
+    proxy: str | None = typer.Option(None, "--proxy", help="Route HTTP through a proxy."),
+    concurrency: int | None = typer.Option(
+        None, "--concurrency", "-c", help="Override max parallel requests.",
+    ),
+    per_domain_rate: float = typer.Option(
+        DEFAULT_PER_DOMAIN_RATE, "--per-domain-rate", min=0.0,
+        help="Max probes per second to the same domain. Use 0 to disable.",
+    ),
+) -> None:
+    settings = Settings.load()
+    sites = select_sites(
+        categories=_parse_csv_set(category), names=_parse_csv_set(only), include_nsfw=nsfw,
+    )
+    if not sites:
+        console.print("[red]error:[/] no sites match those filters")
+        raise typer.Exit(2)
+    if not json_output:
+        banner("recce › selftest", subtitle=f"{len(sites)} site definitions · known account + canary")
+
+    async def run():
+        async with http_client(
+            user_agent=settings.user_agent,
+            timeout=settings.timeout,
+            max_concurrency=concurrency or settings.max_concurrency,
+            proxy=proxy,
+        ) as client:
+            if json_output:
+                return await run_selftest(
+                    client, sites, impersonate=impersonate, per_domain_rate=per_domain_rate,
+                )
+            with Progress(
+                SpinnerColumn(), TextColumn("{task.description}"), BarColumn(bar_width=None),
+                TextColumn("[bold]{task.completed}/{task.total}[/]"), TimeElapsedColumn(),
+                console=console, transient=True,
+            ) as progress:
+                task = progress.add_task("Probing site definitions…", total=len(sites))
+                return await run_selftest(
+                    client, sites, impersonate=impersonate, per_domain_rate=per_domain_rate,
+                    on_progress=lambda _name, _status: progress.advance(task),
+                )
+
+    report = asyncio.run(run())
+    changes = save_report(report) if save else []
+    if json_output:
+        print(json.dumps({**report, "changes": changes}, indent=1))
+        return
+    _render_selftest(report, changes, show_all=show_all, saved=save)
+
+
+def _render_selftest(report: dict, changes: list[dict], *, show_all: bool, saved: bool) -> None:
+    egress = report.get("egress") or {}
+    where = " · ".join(str(egress[k]) for k in ("ip", "country", "org") if egress.get(k)) or "unknown"
+    console.print(
+        f"[dim]egress:[/] {where}   [dim]impersonate:[/] {'on' if report['impersonate'] else 'off'}"
+        f"   [dim]canary:[/] {report['canary']}   [dim]took:[/] {report['duration_s']}s"
+    )
+    rows = [
+        (name, e) for name, e in report["sites"].items()
+        if show_all or e["status"] not in ("healthy", "unverified")
+    ]
+    if rows:
+        order = {s: i for i, s in enumerate(STATUSES)}
+        table = Table(show_header=True, header_style="bold", expand=True)
+        for col, style in (
+            ("Site", None), ("Category", "dim"), ("Health", None),
+            ("Known", "dim"), ("Canary", "dim"), ("Detail", "dim"),
+        ):
+            table.add_column(col, style=style, overflow="fold")
+        for name, e in sorted(rows, key=lambda r: (order.get(r[1]["status"], 9), r[0].lower())):
+            style = _HEALTH_STYLE.get(e["status"], "")
+            table.add_row(
+                name, e["category"], f"[{style}]{e['status']}[/]",
+                _probe_cell(e.get("known")), _probe_cell(e.get("canary")), e.get("detail") or "",
+            )
+        console.print(table)
+    summary = Table(show_header=False, box=None, padding=(0, 2))
+    for status, count in report["summary"].items():
+        summary.add_row(f"[{_HEALTH_STYLE.get(status, '')}]{status}[/]", str(count))
+    console.print(summary)
+    if changes:
+        console.print("\n[bold]Changes since the last run:[/]")
+        for c in changes:
+            style = _HEALTH_STYLE.get(c["to"], "")
+            console.print(f"  {c['site']}: {c['from'] or 'new'} → [{style}]{c['to']}[/]")
+    if saved:
+        console.print(
+            "\n[dim]Saved. Username searches skip false-positive sites "
+            "(override: --flagged-sites mark|off).[/]"
+        )
+    console.print("[dim]'blocked' depends on the egress IP and is not counted as broken.[/]")
+
+
+def _probe_cell(probe: dict | None) -> str:
+    if not probe:
+        return "—"
+    http = f" {probe['http']}" if probe.get("http") is not None else ""
+    return f"{probe['username']}: {probe['status']}{http}"
+
+
 @app.command("doctor", help="Check API keys and network reachability.")
 def cmd_doctor(
     network: bool = typer.Option(True, "--network/--no-network", help="Run lightweight network checks."),
@@ -664,6 +814,18 @@ def cmd_doctor(
         console.print(f"  [dim]WMN cache:[/] {validity}{site_text}  [dim]{cache['path']}[/]")
     else:
         console.print("  [dim]WMN cache:[/] using bundled snapshot")
+    selftest_state = last_run_summary()
+    if selftest_state:
+        counts = selftest_state["summary"]
+        ip = selftest_state["egress"].get("ip") or "?"
+        console.print(
+            f"  [dim]site selftest:[/] {selftest_state['ran_at']} via {ip} · "
+            f"{counts.get('healthy', 0)} healthy · {counts.get('false_positive', 0)} false-positive "
+            f"(skipped in searches) · {counts.get('false_negative', 0)} false-negative · "
+            f"{counts.get('blocked', 0)} blocked"
+        )
+    else:
+        console.print("  [dim]site selftest:[/] never run (`recce selftest`)")
     entitlement = "[green]active[/]" if has_pro_entitlement() else "[dim]inactive[/]"
     console.print(f"\n  [dim]Recce Pro entitlement:[/] {entitlement}  [dim]{pro_licence_path()}[/]")
     console.print("\n[dim]Providers:[/]")

@@ -40,6 +40,27 @@ sudo cp deploy/recce-update.service deploy/recce-update.timer /etc/systemd/syste
 sudo systemctl enable --now recce-update.timer
 ```
 
+Optional weekly site selftest (Monday 04:00, after the WMN refresh). It probes
+every username site definition with a known account and a made-up one and
+saves `~/.cache/recce/selftest.json`; searches (CLI and GUI) then skip sites
+caught reporting made-up usernames as existing:
+
+```bash
+sudo cp deploy/recce-selftest.service deploy/recce-selftest.timer /etc/systemd/system/   # edit User/Group/HOME
+sudo systemctl daemon-reload
+sudo systemctl enable --now recce-selftest.timer
+sudo systemctl start recce-selftest.service       # optional first run (~5–10 min)
+journalctl -u recce-selftest -n 80 --no-pager      # results table + changes since last run
+```
+
+Verdicts: `healthy`, `false_positive` (skipped in searches), `false_negative`,
+`blocked` (401/403/429 or a bot challenge — depends on the egress IP, which
+the report records; not treated as broken), `error`, and `unverified` (no
+known account to test with). To probe flagged sites anyway, pass
+`--flagged-sites mark` (probe, downgrade hits) or `off`, or set
+`RECCE_FLAGGED_SITES` in `/etc/recce/web.env` for the GUI. A flag expires
+after 30 days or as soon as the site's definition changes.
+
 ## 3. Caddy + login
 
 ```bash

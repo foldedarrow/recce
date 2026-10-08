@@ -9,6 +9,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **`recce selftest`**: probes every username site definition with a known
+  account and a made-up one and classifies it healthy / false-positive /
+  false-negative / blocked / error / unverified, recording the egress IP
+  (blocks depend on it). `--category`, `--only`, `--json`. Results persist to
+  `~/.cache/recce/selftest.json`; username searches skip definitions whose
+  last selftest was a false positive (`--flagged-sites mark|off` or
+  `RECCE_FLAGGED_SITES` to override). Weekly `deploy/recce-selftest.timer`.
+  Custom sites gained `known` accounts; bot-challenge pages served with
+  HTTP 200 no longer read as "account exists".
 - **Hudson Rock** infostealer lookups for emails and usernames (keyless): when
   and where a machine holding the identifier's credentials was infected. The
   partial passwords/logins the API returns are never stored or shown.

@@ -153,6 +153,7 @@ Domain profiling is passive by default. Active subdomain bruteforce requires
 
 ```bash
 recce doctor       # show API keys, cache state, and network reachability
+recce selftest     # check every username site definition (known account + made-up one)
 recce doctor --no-network
 recce --version
 ```
