@@ -12,7 +12,7 @@ Two site sources are merged at load time:
 2. **recce custom sites** (`custom_sites.json`) — a small bespoke list of
    probes that don't fit the WMN schema (multi-instance Mastodon, Bluesky's
    AT-Proto API, redirect-marker detection for Bandcamp/Substack/Wordpress,
-   HEAD-request quirks for Kaggle/Dailymotion). Custom entries override
+   JSON endpoints for SPAs such as ArtStation). Custom entries override
    WMN ones with the same name.
 
 Detection methods supported:
@@ -73,6 +73,8 @@ CHALLENGE_MARKERS = {
     "px-captcha": "PerimeterX challenge",
     "/_Incapsula_Resource": "Imperva challenge",
     "sgcaptcha": "SiteGround captcha",
+    "<title>Client Challenge</title>": "Fastly challenge",
+    "/_fs-ch-": "Fastly challenge",
 }
 # Status precedence when several site definitions point at the same profile.
 _STATUS_RANK = {Status.FOUND: 0, Status.NOT_FOUND: 1, Status.UNKNOWN: 2, Status.ERROR: 3, Status.SKIPPED: 4}
