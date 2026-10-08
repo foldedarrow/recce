@@ -26,15 +26,15 @@ deployment box (Proton VPN egress) unless stated.
 
 ## Next — highest value first
 
-### 1. Recursive pivoting (the biggest remaining multiplier)
-Hits already carry pivot material: `extra.usernames` (GitHub identity's X
-handle, commit logins), `extra.emails` (commit identities), Gravatar linked
-accounts, EmailRep profiles. Build a pivot engine that:
-- collects new identifiers from every hit (dedup against what was searched);
-- offers them as one-click follow-up searches in the GUI, and runs them
-  automatically with `--recursive --depth N` in the CLI (Maigret does this);
-- records the chain (which hit produced which identifier) in the
-  investigation, so a report can show *why* an account is attributed.
+### 1. Recursive pivoting — shipped
+`recce/modules/pivot.py` collects usernames/emails from FOUND hits
+(`extra.usernames`, `extra.emails`, `extra.username`, Gravatar `accounts`
+URLs), de-duplicates them against what was searched, and follows them with
+`--recursive --depth N` (max 3) or one-click GUI buttons. Investigations keep
+the chain and exports explain each attribution. EmailRep `profiles` only names
+platforms ("twitter"), not handles, so it is not a pivot source. The profile
+providers from (2) emit `extra.usernames` / `extra.emails`, so their finds
+pivot automatically.
 
 ### 2. Profile parsing for more sites — shipped
 `recce/providers/profiles.py`: GitLab, Mastodon, Bluesky, Keybase (proofs),

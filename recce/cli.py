@@ -23,6 +23,8 @@ from .core.output import (
     export_csv,
     export_json,
     render_domain_summary_card,
+    render_pivot_chain,
+    render_pivot_suggestions,
     render_report,
     render_summary_panel,
 )
@@ -32,6 +34,15 @@ from .modules.domain import DOMAIN_CATEGORIES, domain_consent_error, search_doma
 from .modules.email import search_email
 from .modules.email_deep import deep_email_probes
 from .modules.phone import search_phone
+from .modules.pivot import (
+    DEFAULT_MAX_PER_LEVEL,
+    MAX_DEPTH,
+    PivotRun,
+    extract_pivots,
+    pivot_key,
+    pivot_search,
+    run_pivots,
+)
 from .modules.selftest import (
     FLAGGED_POLICIES,
     STATUSES,
@@ -215,6 +226,30 @@ def cmd_investigations_delete(
     )
 
 
+@investigations_app.command("export", help="Export an investigation, including its pivot chain.")
+def cmd_investigations_export(
+    case_id: str = typer.Argument(..., help="Investigation case ID."),
+    fmt: str = typer.Option("md", "--format", help="md or json."),
+    redacted: bool = typer.Option(False, "--redacted", help="Replace subject identifiers with hashes."),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Write to a file instead of stdout."),
+) -> None:
+    store = _investigation_store()
+    if store.get_investigation(case_id) is None:
+        console.print(f"[red]error:[/] no investigation with ID {case_id}")
+        raise typer.Exit(2)
+    if fmt == "md":
+        text = store.export_markdown(case_id, redacted=redacted)
+    elif fmt == "json":
+        text = store.export_json_bytes(case_id, redacted=redacted).decode()
+    else:
+        raise typer.BadParameter("--format must be md or json")
+    if out:
+        out.write_text(text)
+        console.print(f"[dim]Saved →[/] [cyan]{out}[/]")
+    else:
+        typer.echo(text)
+
+
 @app.command("username", help="Hunt a username across hundreds of platforms (WhatsMyName + curated list).")
 def cmd_username(
     username: str | None = typer.Argument(None, help="Username to search for, e.g. 'foldedarrow'."),
@@ -276,12 +311,27 @@ def cmd_username(
         help="Sites the last `recce selftest` caught reporting made-up usernames: "
         "skip (default), mark (probe but downgrade hits) or off. Env: RECCE_FLAGGED_SITES.",
     ),
+    recursive: bool = typer.Option(
+        False, "--recursive", "-R",
+        help="Follow usernames/emails found in hits with passive follow-up searches.",
+    ),
+    depth: int = typer.Option(
+        1, "--depth", min=1, max=MAX_DEPTH, help=f"Pivot levels for --recursive (max {MAX_DEPTH}).",
+    ),
+    max_pivots: int = typer.Option(
+        DEFAULT_MAX_PER_LEVEL, "--max-pivots", min=1, max=50,
+        help="Most follow-up searches per pivot level; the rest are listed, not run.",
+    ),
+    case: str | None = typer.Option(
+        None, "--case", help="Save this run (and any pivots, with their chain) to an investigation ID.",
+    ),
 ) -> None:
     settings = Settings.load()
     if flagged_sites is not None and flagged_sites.lower() not in FLAGGED_POLICIES:
         raise typer.BadParameter(f"must be one of {', '.join(FLAGGED_POLICIES)}", param_hint="--flagged-sites")
     if no_providers:
         settings = settings.without_provider_integrations()
+    _check_case(case)
     if concurrency:
         settings = Settings(**{**settings.__dict__, "max_concurrency": concurrency})
 
@@ -329,11 +379,44 @@ def cmd_username(
         console.print(f"[red]error:[/] {e}")
         raise typer.Exit(2) from e
 
-    for r in reports:
-        append_registry_gate_hits(r, settings, skip_provider_ids=skip_provider_ids)
-        render_report(r, show_misses=show_misses, show_errors=show_errors)
-        render_summary_panel(r)
-    _maybe_export(reports, json_out, csv_out)
+    username_options = {
+        "only_categories": only_set,
+        "exclude_categories": excl_set,
+        "include_nsfw": nsfw,
+        "per_domain_rate": per_domain_rate,
+        "verify_found": verify,
+        "impersonate": impersonate,
+        "flagged_sites": flagged_sites,
+    }
+    all_reports = _render_and_pivot(
+        reports,
+        settings,
+        recursive=recursive,
+        depth=depth,
+        max_pivots=max_pivots,
+        proxy=proxy,
+        skip_provider_ids=skip_provider_ids,
+        username_options=username_options,
+        show_misses=show_misses,
+        show_errors=show_errors,
+    )
+    _record_to_case(
+        case,
+        all_reports,
+        {
+            "mode": "username",
+            "source": "cli",
+            "include_nsfw": nsfw,
+            "only_categories": sorted(only_set or []),
+            "exclude_categories": sorted(excl_set or []),
+            "per_domain_rate": per_domain_rate,
+            "verify": verify,
+            "impersonate": impersonate,
+            "recursive": recursive,
+            "depth": depth if recursive else 0,
+        },
+    )
+    _maybe_export(all_reports, json_out, csv_out)
 
 
 @app.command("email", help="Look up an email: Gravatar, MX, breaches, reputation, profile pivots.")
@@ -379,10 +462,26 @@ def cmd_email(
     skip_provider: str | None = typer.Option(
         None, "--skip-provider", help="Comma-separated provider IDs to skip.",
     ),
+    recursive: bool = typer.Option(
+        False, "--recursive", "-R",
+        help="Follow usernames/emails found in hits with passive follow-up searches "
+        "(never --deep: deep probes only ever run on the emails you typed).",
+    ),
+    depth: int = typer.Option(
+        1, "--depth", min=1, max=MAX_DEPTH, help=f"Pivot levels for --recursive (max {MAX_DEPTH}).",
+    ),
+    max_pivots: int = typer.Option(
+        DEFAULT_MAX_PER_LEVEL, "--max-pivots", min=1, max=50,
+        help="Most follow-up searches per pivot level; the rest are listed, not run.",
+    ),
+    case: str | None = typer.Option(
+        None, "--case", help="Save this run (and any pivots, with their chain) to an investigation ID.",
+    ),
 ) -> None:
     settings = Settings.load()
     if no_providers:
         settings = settings.without_provider_integrations()
+    _check_case(case)
     skip_provider_ids = _parse_csv_set(skip_provider)
     targets = _read_targets(email, file)
     if deep and not own_emails:
@@ -425,11 +524,33 @@ def cmd_email(
         console.print(f"[red]error:[/] {e}")
         raise typer.Exit(2) from e
 
-    for r in reports:
-        append_registry_gate_hits(r, settings, skip_provider_ids=skip_provider_ids)
-        render_report(r, show_misses=show_misses, show_errors=show_errors)
-        render_summary_panel(r)
-    _maybe_export(reports, json_out, csv_out)
+    all_reports = _render_and_pivot(
+        reports,
+        settings,
+        recursive=recursive,
+        depth=depth,
+        max_pivots=max_pivots,
+        proxy=proxy,
+        skip_provider_ids=skip_provider_ids,
+        username_options={},
+        show_misses=show_misses,
+        show_errors=show_errors,
+    )
+    _record_to_case(
+        case,
+        all_reports,
+        {
+            "mode": "email",
+            "source": "cli",
+            "deep": deep,
+            "ownership_or_consent_confirmed": own_emails,
+            "deep_concurrency": deep_concurrency,
+            "deep_retry": deep_retry,
+            "recursive": recursive,
+            "depth": depth if recursive else 0,
+        },
+    )
+    _maybe_export(all_reports, json_out, csv_out)
 
 
 @app.command("phone", help="Look up a phone number: parse, carrier, region, optional NumVerify.")
@@ -866,6 +987,108 @@ def _format_provider_state(state: str) -> str:
     if state == "disabled":
         return "[dim]disabled[/]"
     return "[dim]not configured[/]"
+
+
+def _render_and_pivot(
+    reports: list[Report],
+    settings: Settings,
+    *,
+    recursive: bool,
+    depth: int,
+    max_pivots: int,
+    proxy: str | None,
+    skip_provider_ids: set[str] | None,
+    username_options: dict,
+    show_misses: bool,
+    show_errors: bool,
+) -> list[Report]:
+    """Render each root report, then its pivots: run them, or suggest them.
+
+    Returns the roots followed by every follow-up report, for export/recording.
+    """
+    searched = {pivot_key(r.query_type, r.query) for r in reports}
+
+    def render(r: Report) -> None:
+        append_registry_gate_hits(r, settings, skip_provider_ids=skip_provider_ids)
+        render_report(r, show_misses=show_misses, show_errors=show_errors)
+        render_summary_panel(r)
+
+    out: list[Report] = []
+    for root in reports:
+        render(root)
+        out.append(root)
+        if not recursive:
+            render_pivot_suggestions(
+                [p for p in extract_pivots(root) if p.key not in searched]
+            )
+            continue
+        run = asyncio.run(
+            _follow_pivots(
+                root,
+                settings,
+                proxy=proxy,
+                depth=depth,
+                max_pivots=max_pivots,
+                skip_provider_ids=skip_provider_ids,
+                username_options=username_options,
+                seen=searched,
+            )
+        )
+        searched |= {pivot_key(r.query_type, r.query) for r in run.reports}
+        for child in run.reports:
+            render(child)
+            out.append(child)
+        render_pivot_chain(run)
+    return out
+
+
+async def _follow_pivots(
+    root: Report,
+    settings: Settings,
+    *,
+    proxy: str | None,
+    depth: int,
+    max_pivots: int,
+    skip_provider_ids: set[str] | None,
+    username_options: dict,
+    seen: set[tuple[str, str]],
+) -> PivotRun:
+    async with http_client(
+        user_agent=settings.user_agent,
+        timeout=settings.timeout,
+        max_concurrency=settings.max_concurrency,
+        proxy=proxy,
+    ) as client:
+        search = pivot_search(
+            client, settings, skip_provider_ids=skip_provider_ids, **username_options
+        )
+        return await run_pivots(root, search, depth=depth, max_per_level=max_pivots, seen=seen)
+
+
+def _check_case(case_id: str | None) -> None:
+    if case_id and _investigation_store().get_investigation(case_id) is None:
+        console.print(f"[red]error:[/] no investigation with ID {case_id}")
+        raise typer.Exit(2)
+
+
+def _record_to_case(case_id: str | None, reports: list[Report], root_args: dict) -> None:
+    """Save roots with their CLI args; pivots with passive-only args."""
+    if not case_id:
+        return
+    store = _investigation_store()
+    for r in reports:
+        if r.pivot is None:
+            args = root_args
+        else:
+            args = {"mode": r.query_type, "source": "cli", "pivot": True, "deep": False}
+        store.record_run(
+            investigation_id=case_id,
+            report=r,
+            args=args,
+            recce_version=__version__,
+            wmn_cache=cache_status(),
+        )
+    console.print(f"[dim]Saved {len(reports)} run(s) to case[/] [cyan]{case_id}[/]")
 
 
 async def _run_bounded(fn, items: list[str], limit: int) -> list[Report]:

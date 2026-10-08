@@ -48,6 +48,35 @@ recce email someone@example.com --json out.json
 
 ---
 
+## Recursive pivoting (`username` and `email`)
+
+Hits often name other identifiers: GitHub identity's linked X handle and the
+real emails in a user's commits, GitHub commit search's logins for an email,
+Gravatar's linked profiles, the email local-part. After every `username` or
+`email` run, recce lists these as ready-to-run commands. `--recursive` runs
+them for you, breadth-first, and prints the chain.
+
+```bash
+recce email someone@example.com --recursive               # follow one level
+recce username somehandle --recursive --depth 2           # up to 3 levels
+recce username somehandle -R --max-pivots 5               # cap follow-ups per level
+recce username somehandle -R --case <investigation-id>    # save runs + chain to a case
+recce investigations export <investigation-id>            # Markdown report incl. pivot chain
+```
+
+- `--depth` defaults to 1 and is capped at 3; `--max-pivots` (default 10)
+  limits follow-ups per level. Anything not run is listed under the chain.
+- Identifiers are de-duplicated (case-insensitive) against everything already
+  searched, so cycles stop on their own.
+- Follow-ups are the passive search only. `--deep` probes run on the emails
+  you typed and never on discovered ones; domains are never pivoted to, so no
+  bruteforce either.
+- With `--case`, each follow-up is saved with the hit that named it. Exports
+  (`recce investigations export`, or the GUI's case exports) show a *Pivot
+  chain* section and a "Discovered via" line per run.
+
+---
+
 ## 3. `recce phone <number>`
 
 Parse a phone number and emit pivot links you can click to investigate manually.
@@ -218,4 +247,5 @@ If you want a real Mac app with a Dock icon and no browser chrome, see the READM
 - **Phone tab** — text input, region selector, results with clickable WhatsApp / Truecaller / Sync.me / Google links.
 - **Domain tab** — domain profile form with passive categories and consent-gated subdomain bruteforce.
 - **Domain summary** — top-level domain facts extracted from the detailed evidence.
+- **Follow-up searches** — under username and email results, identifiers named in the hits appear as one-click searches. The follow-up is saved to the active case with the hit that led to it (deep mode never applies).
 - **Downloads** — every report has CSV and JSON buttons.

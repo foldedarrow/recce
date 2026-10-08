@@ -18,6 +18,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `RECCE_FLAGGED_SITES` to override). Weekly `deploy/recce-selftest.timer`.
   Custom sites gained `known` accounts; bot-challenge pages served with
   HTTP 200 no longer read as "account exists".
+- **Recursive pivoting** for `username` and `email`: identifiers named in hits
+  (GitHub identity's X handle and commit emails, GitHub commit logins, the
+  GitHub profile email, Gravatar linked profiles, the email local-part) are
+  listed as next commands, run automatically with `--recursive --depth N`
+  (max 3, `--max-pivots` per level) and printed as a pivot chain. Follow-ups
+  are passive only: never `--deep`, never domain bruteforce. The GUI shows
+  them as one-click follow-up searches.
+- Investigations record the pivot chain: each follow-up run carries the hit
+  that named it (`pivot.run` audit event), and JSON/Markdown/PDF exports show
+  a *Pivot chain* section and "Discovered via" per run. CLI `--case <id>`
+  saves runs to an investigation; `recce investigations export` writes one.
 - **Profile parsing** for nine more sites (keyless username providers): GitLab,
   Mastodon (mastodon.social), Bluesky, Keybase, Hacker News, Chess.com,
   Docker Hub, npm and Steam. Each reads the site's public API and reports

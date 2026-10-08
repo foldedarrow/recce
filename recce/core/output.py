@@ -193,3 +193,46 @@ def export_csv(reports: list[Report], path: Path) -> None:
                     h.error or "",
                 ])
     console.print(f"[dim]Saved CSV →[/] [cyan]{path}[/]")
+
+
+def render_pivot_suggestions(pivots: list) -> None:
+    """Identifiers found in hits, as ready-to-run commands (no --recursive)."""
+    if not pivots:
+        return
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    for p in pivots:
+        table.add_row(
+            Text(p.command, style="bold"),
+            Text(f"# from {p.origin.source} ({p.origin.field})", style="dim"),
+        )
+    console.print(
+        Panel(
+            table,
+            title="[bold cyan]Pivots found[/] [dim]— follow with --recursive[/]",
+            border_style="cyan",
+        )
+    )
+
+
+def render_pivot_chain(run) -> None:  # type: ignore[no-untyped-def]
+    """Tree of follow-up searches: which hit named which identifier."""
+    from rich.tree import Tree
+
+    def label(report: Report) -> Text:
+        text = Text(f"{report.query_type} ", style="dim")
+        text.append(report.query, style="bold")
+        text.append(f"  {len(report.found)} hit(s)", style="green" if report.found else "dim")
+        return text
+
+    root = Tree(label(run.root))
+    nodes = {(run.root.query_type, run.root.query): root}
+    for report in run.reports:
+        origin = report.pivot
+        parent = nodes.get((origin.from_type, origin.from_query), root)
+        text = label(report)
+        text.append(f"  ← {origin.source} ({origin.field})", style="cyan")
+        nodes[(report.query_type, report.query)] = parent.add(text)
+    for p in run.pending:
+        parent = nodes.get((p.origin.from_type, p.origin.from_query), root)
+        parent.add(Text(f"not run: {p.command}  ← {p.origin.source} ({p.origin.field})", style="dim"))
+    console.print(Panel(root, title="[bold cyan]Pivot chain[/]", border_style="cyan"))

@@ -36,11 +36,23 @@ class Hit(BaseModel):
         return self.status is Status.FOUND
 
 
+class PivotOrigin(BaseModel):
+    """Why a follow-up search ran: the hit in an earlier report that named it."""
+
+    from_query: str
+    from_type: str
+    source: str
+    field: str
+    hit_url: str | None = None
+    depth: int = 1
+
+
 class Report(BaseModel):
     """Top-level report from a single query."""
 
     query: str
     query_type: str
+    pivot: PivotOrigin | None = None
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
     hits: list[Hit] = Field(default_factory=list)
