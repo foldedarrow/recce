@@ -404,7 +404,7 @@ def ofcom_hit(nsn: str, national: str = "", index: NumberingIndex | None = None)
             category="carrier",
             status=Status.NOT_FOUND,
             summary=f"no Ofcom number block covers this number ({as_of})",
-            extra={"attribution": index.meta.get("attribution", ATTRIBUTION)},
+            extra={"data_attribution": index.meta.get("attribution", ATTRIBUTION)},
             confidence=0.6,
         )
 
@@ -439,7 +439,7 @@ def ofcom_hit(nsn: str, national: str = "", index: NumberingIndex | None = None)
             "allocation_date": info.allocated,
             "area": info.area,
             "data_published": published,
-            "attribution": index.meta.get("attribution", ATTRIBUTION),
+            "data_attribution": index.meta.get("attribution", ATTRIBUTION),
         },
         confidence=0.95 if info.in_service else 0.8,
     )

@@ -386,11 +386,19 @@ def _clusters(
     return clusters
 
 
+def cluster_attribution(extra: dict[str, Any]) -> dict[str, Any] | None:
+    """The cluster annotation `attribute()` left on a hit, if any. Runs saved
+    before 2026-10-08 can hold Ofcom's licence credit (a string) under the
+    same key, so anything that isn't a dict is ignored."""
+    attribution = extra.get("attribution")
+    return attribution if isinstance(attribution, dict) else None
+
+
 def uncorroborated_accounts(report: Report) -> int:
     """Distinct accounts among FOUND hits that joined no cluster."""
     keys = set()
     for i, hit in enumerate(report.found):
-        attribution = hit.extra.get("attribution")
+        attribution = cluster_attribution(hit.extra)
         if attribution and attribution.get("cluster") is None:
             keys.add(url_key(hit.url) or ("", str(i)))
     return len(keys)

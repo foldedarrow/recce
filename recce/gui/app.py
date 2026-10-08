@@ -23,7 +23,7 @@ from recce.core.investigations import InvestigationStore, delete_confirmation_ma
 from recce.core.output import fallback_note
 from recce.core.result import Report, Status
 from recce.licensing import has_pro_entitlement, pro_licence_path, write_pro_licence
-from recce.modules.attribution import uncorroborated_accounts
+from recce.modules.attribution import cluster_attribution, uncorroborated_accounts
 from recce.modules.domain import search_domain
 from recce.modules.domain_summary import build_domain_summary
 from recce.modules.email import search_email
@@ -241,7 +241,7 @@ STATUS_GLYPH = {
 
 
 def _cluster_label(hit: Any) -> str:
-    attribution = hit.extra.get("attribution") if hit.is_found else None
+    attribution = cluster_attribution(hit.extra) if hit.is_found else None
     if not attribution:
         return ""
     if attribution.get("cluster") is None:
