@@ -162,23 +162,42 @@ async def test_attribute_clusters_corroborated_hits_and_leaves_the_rest() -> Non
 
     assert len(clusters) == 1
     [cluster] = clusters
-    assert {m.source for m in cluster.members} == {
-        "GitHub", "X", "GitHub identity", "GitLab profile", "Keybase profile",
-    }
+    # The GitHub probe and GitHub identity hit are one account.
+    assert [m.source for m in cluster.members] == [
+        "GitHub + GitHub identity", "X", "GitLab profile", "Keybase profile",
+    ]
     assert report.clusters == clusters
-    signals = " | ".join(cluster.signals)
-    assert "GitHub ↔ GitHub identity: same profile" in signals
-    assert "X ↔ GitHub identity: cross-link" in signals
-    assert "GitHub identity ↔ GitLab profile: same avatar, same display name" in signals
-    assert "Keybase profile: cross-link" in signals
-    assert [m.source for m in cluster.timeline] == ["Keybase profile", "GitHub identity", "GitLab profile"]
+    assert cluster.signals == [
+        "GitHub + GitHub identity ↔ X: cross-link",
+        "GitHub + GitHub identity ↔ GitLab profile: same avatar, same display name",
+        "GitHub + GitHub identity ↔ Keybase profile: cross-link",
+    ]
+    assert [m.source for m in cluster.timeline] == [
+        "Keybase profile", "GitHub + GitHub identity", "GitLab profile",
+    ]
     assert 0.0 < cluster.confidence <= 1.0
 
     assert _cluster_of(pinterest) is None
     assert _cluster_of(chess) is None
     assert pinterest.extra["attribution"]["signals"] == ["username match only"]
     assert github_identity.extra["attribution"]["confidence"] >= 0.95
-    assert any("same avatar with GitHub identity" in s for s in gitlab.extra["attribution"]["signals"])
+    assert any("same avatar with GitHub + GitHub identity" in s for s in gitlab.extra["attribution"]["signals"])
+
+
+@pytest.mark.asyncio
+async def test_one_account_seen_by_several_sources_is_not_a_cluster() -> None:
+    probe = _site("GitHub (User)", "https://github.com/sample")
+    profile = _profile("GitHub identity", "https://github.com/sample", name="Sam Example")
+    commits = [
+        Hit(source="GitHub identity", status=Status.FOUND, url="https://github.com/sample",
+            extra={"name": "Sam Example", "email": f"sam{i}@example.test", "emails": []})
+        for i in range(3)
+    ]
+    other = _site("Pinterest", "https://pinterest.com/sample")
+    report = _report(probe, profile, *commits, other)
+
+    assert await attribute(report, fetch_avatars=False) == []
+    assert all(_cluster_of(h) is None for h in report.hits)
 
 
 @pytest.mark.asyncio
@@ -272,4 +291,4 @@ def test_cli_prints_clusters(monkeypatch) -> None:  # type: ignore[no-untyped-de
     assert result.exit_code == 0, result.output
     assert "Likely the same person" in result.output
     assert "Cluster 1" in result.output
-    assert "1 other hit(s) match on the username only" in result.output
+    assert "1 other account(s) match on the username only" in result.output

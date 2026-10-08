@@ -13,8 +13,9 @@ when their public data corroborates each other:
   one-word name counts for less);
 - same location — weak, only adds to other signals.
 
-Linked hits are grouped into clusters ("these 5 profiles look like the same
-person"). Account-creation dates order each cluster into a timeline. Hits
+Hits for the same profile URL count as one account. Accounts linked by the
+other signals are grouped into clusters ("these 5 profiles look like the same
+person"); a cluster always spans at least two accounts. Account-creation dates order each cluster into a timeline. Hits
 with no corroboration match on the username alone.
 
 Avatar fetching is the only network access: one GET per avatar image, which
@@ -268,7 +269,19 @@ def _combine(signals: list[str]) -> float:
 def _clusters(
     nodes: list[_Node], edges: dict[tuple[int, int], list[str]], report: Report
 ) -> list[Cluster]:
-    parent = {n.index: n.index for n in nodes}
+    """Group linked hits into accounts, then accounts into clusters.
+
+    Hits for one profile URL (a site probe, its profile API, commit identities)
+    are one *account*: that confirms existence, not attribution. A cluster
+    needs at least two distinct accounts linked by corroborating signals.
+    """
+    by_index = {n.index: n for n in nodes}
+    account_of: dict[int, int] = {}
+    for node in nodes:
+        same = next((o.index for o in nodes if o.key and o.key == node.key), node.index)
+        account_of[node.index] = same
+
+    parent = {acc: acc for acc in set(account_of.values())}
 
     def find(i: int) -> int:
         while parent[i] != i:
@@ -276,50 +289,68 @@ def _clusters(
             i = parent[i]
         return i
 
-    for a, b in edges:
-        parent[find(a)] = find(b)
+    # Cross-account links: signals between two accounts, merged over their hits.
+    links: dict[tuple[int, int], set[str]] = {}
+    for (a, b), signals in edges.items():
+        acc_a, acc_b = account_of[a], account_of[b]
+        if acc_a == acc_b:
+            continue
+        pair = (min(acc_a, acc_b), max(acc_a, acc_b))
+        links.setdefault(pair, set()).update(s for s in signals if s != "same profile")
+    links = {pair: sig for pair, sig in links.items() if sig and _combine(list(sig)) >= LINK_THRESHOLD}
+    for acc_a, acc_b in links:
+        parent[find(acc_a)] = find(acc_b)
 
-    groups: dict[int, list[_Node]] = {}
+    accounts: dict[int, list[_Node]] = {}
     for node in nodes:
-        groups.setdefault(find(node.index), []).append(node)
-    multi = sorted((g for g in groups.values() if len(g) > 1), key=lambda g: (-len(g), g[0].index))
+        accounts.setdefault(account_of[node.index], []).append(node)
+
+    def label(acc: int) -> str:
+        return " + ".join(dict.fromkeys(n.hit.source for n in accounts[acc]))
+
+    groups: dict[int, list[int]] = {}
+    for acc in sorted(accounts):
+        groups.setdefault(find(acc), []).append(acc)
+    multi = sorted((g for g in groups.values() if len(g) > 1), key=lambda g: (-len(g), g[0]))
 
     clusters: list[Cluster] = []
     for cid, group in enumerate(multi, start=1):
-        members = {n.index for n in group}
-        member_scores: dict[int, float] = {}
-        member_signals: dict[int, list[str]] = {}
+        members = set(group)
+        account_scores: dict[int, float] = {}
+        account_signals: dict[int, list[str]] = {}
         cluster_signals: list[str] = []
-        for (a, b), signals in edges.items():
-            if a not in members:
+        for (acc_a, acc_b), signals in sorted(links.items()):
+            if acc_a not in members:
                 continue
-            score = _combine(signals)
-            for i, other in ((a, b), (b, a)):
-                miss = 1.0 - member_scores.get(i, 0.0)
-                member_scores[i] = round(1.0 - miss * (1.0 - score), 2)
-                member_signals.setdefault(i, []).extend(
-                    f"{s} with {report.hits[other].source}" for s in signals
-                )
-            cluster_signals.append(
-                f"{report.hits[a].source} ↔ {report.hits[b].source}: {', '.join(signals)}"
-            )
-        timeline = sorted((n for n in group if n.created_at), key=lambda n: n.created_at or "")
-        confidence = round(sum(member_scores.values()) / len(group), 2)
-        for node in group:
-            node.hit.extra["attribution"] = {
-                "cluster": cid,
-                "confidence": member_scores.get(node.index, 0.0),
-                "signals": member_signals.get(node.index, []),
-            }
+            ordered = [s for s in WEIGHTS if s in signals]
+            score = _combine(ordered)
+            for acc, other in ((acc_a, acc_b), (acc_b, acc_a)):
+                miss = 1.0 - account_scores.get(acc, 0.0)
+                account_scores[acc] = round(1.0 - miss * (1.0 - score), 2)
+                account_signals.setdefault(acc, []).extend(f"{s} with {label(other)}" for s in ordered)
+            cluster_signals.append(f"{label(acc_a)} ↔ {label(acc_b)}: {', '.join(ordered)}")
+
+        def created(acc: int) -> str | None:
+            dates = sorted(n.created_at for n in accounts[acc] if n.created_at)
+            return dates[0] if dates else None
+
+        timeline = sorted((acc for acc in group if created(acc)), key=lambda acc: created(acc) or "")
+        for acc in group:
+            for node in accounts[acc]:
+                node.hit.extra["attribution"] = {
+                    "cluster": cid,
+                    "confidence": account_scores.get(acc, 0.0),
+                    "signals": account_signals.get(acc, []),
+                }
         clusters.append(
             Cluster(
                 id=cid,
-                confidence=confidence,
-                members=[ClusterMember(source=n.hit.source, url=n.hit.url) for n in group],
+                confidence=round(sum(account_scores.get(a, 0.0) for a in group) / len(group), 2),
+                members=[ClusterMember(source=label(a), url=by_index[a].hit.url) for a in group],
                 signals=cluster_signals,
                 timeline=[
-                    ClusterMember(source=n.hit.source, url=n.hit.url, created_at=n.created_at)
-                    for n in timeline
+                    ClusterMember(source=label(a), url=by_index[a].hit.url, created_at=created(a))
+                    for a in timeline
                 ],
             )
         )
@@ -332,6 +363,16 @@ def _clusters(
                 "signals": ["username match only"],
             }
     return clusters
+
+
+def uncorroborated_accounts(report: Report) -> int:
+    """Distinct accounts among FOUND hits that joined no cluster."""
+    keys = set()
+    for i, hit in enumerate(report.found):
+        attribution = hit.extra.get("attribution")
+        if attribution and attribution.get("cluster") is None:
+            keys.add(url_key(hit.url) or ("", str(i)))
+    return len(keys)
 
 
 def _as_list(value: Any) -> list[Any]:
