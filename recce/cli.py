@@ -517,7 +517,7 @@ def cmd_email(
     ),
     deep: bool = typer.Option(
         False, "--deep", "-d",
-        help="Probe ~30 sites' signup/sign-in endpoints (holehe) to discover registered accounts. "
+        help="Probe ~115 sites' sign-up/sign-in lookups (user-scanner + holehe) to discover registered accounts. "
              "Slower (~30–60s) and only safe to use on emails you own.",
     ),
     show_misses: bool = typer.Option(False, "--show-misses"),

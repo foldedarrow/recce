@@ -33,6 +33,9 @@ dependencies = [
     "pydantic>=2.6.0",
     "tldextract>=5.1.0",
     "holehe>=1.61",
+    # Deep email probes. Pinned: each release must be re-audited before a bump
+    # (docs/USER_SCANNER_AUDIT.md).
+    "user-scanner==1.5.2.1",
     # Browser-fingerprint HTTP for username probes (gets past bot walls).
     "curl_cffi>=0.7",
     # Avatar perceptual hashing for attribution clusters.

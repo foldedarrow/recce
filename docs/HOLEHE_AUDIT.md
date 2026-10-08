@@ -188,7 +188,10 @@ example.com canary passes it cleanly.
   stars, commits this week, PyPI `user-scanner` 1.5.2.1 from 2026-09-30)
   covers about 220 email modules in its `email_scan` package and marks
   modules that notify the target as "loud", skipping them unless
-  `--allow-loud` is passed. It would need its own audit like this one, plus
-  an adapter (its modules build their own httpx clients and take proxies from
-  a proxy file, not an injected client). That is worth a separate evaluation
-  before more holehe repair work.
+  `--allow-loud` is passed.
+- **Outcome (2026-10-08):** user-scanner was audited the same way
+  ([USER_SCANNER_AUDIT.md](USER_SCANNER_AUDIT.md)): 18 of its modules
+  proved working against 4 here, so it is now deep mode's main backend.
+  holehe still runs 18 of the 33 modules above, the ones for sites
+  user-scanner lacks (lastpass and replit among them). The 15 it hands over
+  are listed in `HOLEHE_REPLACED_BY_USER_SCANNER`.

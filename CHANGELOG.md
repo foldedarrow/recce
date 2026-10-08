@@ -145,6 +145,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **Deep email now runs on user-scanner** (roadmap #6): `recce email --deep`
+  probes 99 audited modules of [user-scanner](https://github.com/kaifcodec/user-scanner)
+  1.5.2.1 plus the 18 holehe modules for sites user-scanner lacks (117 probes,
+  up from 33). Proven working sites went from 4 to 20. All 211 user-scanner
+  email modules were read before install; the 104 that could notify the
+  address owner (44 flagged loud upstream, plus `vedantu`, which this audit
+  caught sending a login code, plus 59 that sign in with a password, submit
+  a sign-up or start a recovery flow) never run, and the pinned release is
+  checked by a test so new modules can't run unreviewed. Probes follow the
+  chosen exit, the same-domain canary covers both backends, and each hit's
+  `extra.backend` says which library answered. See
+  `docs/USER_SCANNER_AUDIT.md`.
+
 - **holehe module audit** (roadmap #6): all 121 holehe 1.61 modules were tested
   with the operator's own addresses and made-up ones, over the Proton, Tor and
   residential exits. Deep mode now runs 33 modules instead of 108. Skipped:
