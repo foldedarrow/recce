@@ -26,6 +26,7 @@ from recce.modules.domain_summary import build_domain_summary
 from recce.modules.email import search_email
 from recce.modules.email_deep import deep_email_probes
 from recce.modules.phone import search_phone
+from recce.modules.pivot import Pivot, describe_origin, extract_pivots, pivot_key
 from recce.modules.username import (
     DEFAULT_PER_DOMAIN_RATE,
     cache_status,
@@ -260,6 +261,7 @@ def audit_event_label(event_type: str) -> str:
         "run.recorded": "Run recorded",
         "domain.run": "Domain run",
         "domain.bruteforce.run": "Domain bruteforce run",
+        "pivot.run": "Pivot run",
     }
     return labels.get(event_type, event_type)
 
@@ -403,9 +405,61 @@ def _comparison_row(change: str, hit: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _mark_searched(report: Report) -> None:
+    searched = st.session_state.setdefault("pivot_searched", set())
+    searched.add(pivot_key(report.query_type, report.query))
+
+
+def _queue_pivot(pivot: Pivot) -> None:
+    """Button callback: switch mode, pre-fill the identifier, run it next render."""
+    if pivot.kind == "username":
+        st.session_state["mode"] = "Username"
+        st.session_state["u_target"] = pivot.value
+    else:
+        st.session_state["mode"] = "Email"
+        st.session_state["e_target"] = pivot.value
+    st.session_state["pending_pivot"] = pivot
+
+
+def _take_pending_pivot(kind: str) -> Pivot | None:
+    pending = st.session_state.get("pending_pivot")
+    if pending is None or pending.kind != kind:
+        return None
+    del st.session_state["pending_pivot"]
+    return pending
+
+
+def render_pivot_suggestions(report: Report) -> None:
+    """Identifiers named in this report's hits, as one-click follow-up searches."""
+    searched = st.session_state.get("pivot_searched", set())
+    depth = (report.pivot.depth if report.pivot else 0) + 1
+    pivots = [p for p in extract_pivots(report, depth=depth) if p.key not in searched]
+    if not pivots:
+        return
+    st.subheader("Follow-up searches")
+    st.caption(
+        "Identifiers named in these hits. Follow-ups are passive lookups only; "
+        "deep mode never runs on a discovered identifier. Saved runs record which "
+        "hit led to each one."
+    )
+    for i, p in enumerate(pivots):
+        cols = st.columns([4, 6])
+        cols[0].button(
+            f"🔎 {p.kind}: {p.value}",
+            key=f"pivot-{report.query_type}-{report.query}-{i}",
+            on_click=_queue_pivot,
+            args=(p,),
+            use_container_width=True,
+        )
+        cols[1].caption(f"from **{p.origin.source}** ({p.origin.field})")
+
+
 def render_results(report: Report, *, show_misses: bool, show_errors: bool) -> None:
     found = report.found
     errors = report.errors
+
+    if report.pivot is not None:
+        st.info(f"Pivot search — discovered via {describe_origin(report.pivot)}")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Sources checked", len(report.hits))
@@ -823,11 +877,13 @@ def _username_mode() -> None:
         )
         submitted = st.form_submit_button("Run", type="primary", use_container_width=True)
 
-    if submitted and target.strip():
+    pending = _take_pending_pivot("username")
+    if (submitted or pending) and target.strip():
+        query = pending.value if pending else target.strip()
         only = {c.strip().lower() for c in cats.split(",") if c.strip()} or None
         exclude = {c.strip().lower() for c in excludes.split(",") if c.strip()} or None
         n_sites = site_count(include_nsfw=nsfw)
-        with st.status(f"Hunting **{target}** across {n_sites} sites…", expanded=False) as status:
+        with st.status(f"Hunting **{query}** across {n_sites} sites…", expanded=False) as status:
             async def run() -> Report:
                 async with http_client(
                     user_agent=settings.user_agent,
@@ -836,7 +892,7 @@ def _username_mode() -> None:
                     proxy=runtime_proxy.strip() or None,
                 ) as client:
                     return await search_username(
-                        target.strip(), client,
+                        query, client,
                         only_categories=only,
                         exclude_categories=exclude,
                         include_nsfw=nsfw,
@@ -848,12 +904,16 @@ def _username_mode() -> None:
             try:
                 report = asyncio.run(run())
                 append_registry_gate_hits(report, settings)
+                if pending:
+                    report.pivot = pending.origin
+                _mark_searched(report)
                 status.update(label=f"Done — {len(report.found)} hit(s).", state="complete")
                 st.session_state["u_report"] = report
                 record_gui_run(
                     report,
                     {
                         "mode": "username",
+                        "pivot": bool(pending),
                         "include_nsfw": nsfw,
                         "only_categories": sorted(only) if only else [],
                         "exclude_categories": sorted(exclude) if exclude else [],
@@ -874,6 +934,7 @@ def _username_mode() -> None:
             show_misses=st.session_state.get("u_misses", False),
             show_errors=st.session_state.get("u_errors", False),
         )
+        render_pivot_suggestions(st.session_state["u_report"])
 
 
 def _email_mode() -> None:
@@ -904,14 +965,19 @@ def _email_mode() -> None:
         deep_retry = d2.checkbox("Retry rate-limited probes", value=True, key="e_deep_retry")
         submitted = st.form_submit_button("Run", type="primary", use_container_width=True)
 
-    if submitted and target.strip():
+    pending = _take_pending_pivot("email")
+    if pending:
+        # Consent gate: deep probes only ever run on an email the user typed.
+        deep = False
+    if (submitted or pending) and target.strip():
+        query = pending.value if pending else target.strip()
         if deep and active_investigation() is None:
             st.error("Deep mode requires an active case so consent and evidence are recorded.")
             return
         if deep and not own_email:
             st.error("Deep mode requires ownership or consent confirmation.")
             return
-        label = f"Looking up **{target}**…"
+        label = f"Looking up **{query}**…"
         if deep:
             label += " _(deep mode — this can take ~30–60s)_"
         with st.status(label, expanded=False) as status:
@@ -922,10 +988,10 @@ def _email_mode() -> None:
                     max_concurrency=int(runtime_concurrency),
                     proxy=runtime_proxy.strip() or None,
                 ) as client:
-                    r = await search_email(target.strip(), client, settings)
+                    r = await search_email(query, client, settings)
                 if deep:
                     for hit in await deep_email_probes(
-                        target.strip(),
+                        query,
                         timeout=runtime_timeout,
                         max_concurrency=int(deep_concurrency),
                         proxy=runtime_proxy.strip() or None,
@@ -939,12 +1005,16 @@ def _email_mode() -> None:
             try:
                 report = asyncio.run(run())
                 append_registry_gate_hits(report, settings)
+                if pending:
+                    report.pivot = pending.origin
+                _mark_searched(report)
                 status.update(label=f"Done — {len(report.found)} hit(s).", state="complete")
                 st.session_state["e_report"] = report
                 record_gui_run(
                     report,
                     {
                         "mode": "email",
+                        "pivot": bool(pending),
                         "deep": deep,
                         "ownership_or_consent_confirmed": own_email,
                         "deep_concurrency": int(deep_concurrency),
@@ -965,6 +1035,7 @@ def _email_mode() -> None:
             show_misses=st.session_state.get("e_misses", False),
             show_errors=st.session_state.get("e_errors", False),
         )
+        render_pivot_suggestions(st.session_state["e_report"])
 
 
 def _phone_mode() -> None:
