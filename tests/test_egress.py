@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -294,3 +295,104 @@ def test_impersonating_client_forces_ipv4_resolution(monkeypatch) -> None:  # ty
     seen.clear()
     ImpersonatingClient(proxy="socks5://127.0.0.1:1080")
     assert seen["curl_options"] is None
+
+
+# --- per-site exit preferences (selftest-learned) -----------------------------------
+
+HOME_URL = "socks5h://127.0.0.1:1080"
+TOR_LABEL = f"tor ({TOR})"
+HOME_LABEL = f"home ({HOME_URL})"
+
+
+def _learned(tmp_path: Path, monkeypatch, exits_by_site: dict[str, dict[str, str]]) -> None:  # type: ignore[no-untyped-def]
+    """Write a selftest state saying how each exit fared on each (blocked) site."""
+    from datetime import datetime, timezone
+
+    from recce.modules import selftest
+
+    sites = {s["name"]: s for s in _sites()}
+    state = {"sites": {}}
+    for name, verdicts in exits_by_site.items():
+        state["sites"][name] = {
+            "status": "blocked",
+            "fingerprint": selftest.site_fingerprint(sites[name]),
+            "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "exits": {label: {"status": status} for label, status in verdicts.items()},
+        }
+    path = tmp_path / "selftest.json"
+    path.write_text(__import__("json").dumps(state))
+    monkeypatch.setattr(selftest, "SELFTEST_PATH", path)
+
+
+def test_exit_order_puts_working_exits_first_and_drops_walled_ones(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from recce.modules import selftest
+
+    _learned(tmp_path, monkeypatch, {
+        "Walled": {TOR_LABEL: "blocked", HOME_LABEL: "healthy"},
+        "Fortress": {TOR_LABEL: "error", HOME_LABEL: "healthy"},
+    })
+    order = selftest.exit_order(_sites(), [TOR_LABEL, HOME_LABEL])
+    assert order["Walled"] == [HOME_LABEL]  # Tor is walled for it: dropped
+    assert order["Fortress"] == [HOME_LABEL, TOR_LABEL]
+    assert order["Open"] == [TOR_LABEL, HOME_LABEL]  # nothing learned: configured order
+
+
+def test_exit_order_ignores_stale_or_changed_verdicts(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from recce.modules import selftest
+
+    _learned(tmp_path, monkeypatch, {"Walled": {TOR_LABEL: "blocked"}})
+    changed = [{**_sites()[0], "url": "https://elsewhere.test/{u}"}]
+    assert selftest.exit_order(changed, [TOR_LABEL])["Walled"] == [TOR_LABEL]
+    later = datetime.now(timezone.utc) + timedelta(days=60)
+    assert selftest.exit_order(_sites(), [TOR_LABEL], now=later)["Walled"] == [TOR_LABEL]
+
+
+@pytest.mark.asyncio
+async def test_search_follows_the_learned_exit_order(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from recce.core.egress import ExitChain
+
+    monkeypatch.setenv("RECCE_EXITS", f"tor={TOR};home={HOME_URL}")
+    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False: _sites())
+    _learned(tmp_path, monkeypatch, {
+        "Walled": {TOR_LABEL: "blocked", HOME_LABEL: "healthy"},
+        "Fortress": {TOR_LABEL: "blocked", HOME_LABEL: "blocked"},
+    })
+    primary = SiteClient({"walled.test": "block", "fortress.test": "block"})
+    tor = SiteClient({}, proxy=TOR)  # Tor would answer everything, but selftest says it is walled
+    home = SiteClient({}, proxy=HOME_URL)
+    clients = {TOR: tor, HOME_URL: home}
+    monkeypatch.setattr(username_mod, "_client_for_exit", lambda client, exit_, browser: clients[exit_.proxy])
+
+    report = await username_mod.search_username(
+        "alice", primary, show_progress=False, impersonate=False, per_domain_rate=0,
+        guarded_backoff_seconds=0, flagged_sites="mark", attribute_hits=False,
+        fallback_exit=ExitChain((Exit("tor", TOR), Exit("home", HOME_URL))),
+    )
+
+    hits = {h.source: h for h in report.hits}
+    assert hits["Walled"].status is Status.FOUND and hits["Walled"].extra["exit"] == HOME_LABEL
+    assert not any("walled.test" in u for u in tor.requests)
+    # Walled on every exit: not retried at all, and the hit says why.
+    assert hits["Fortress"].status is Status.UNKNOWN
+    assert "fallback_skipped" in hits["Fortress"].extra
+    assert not any("fortress.test" in u for u in tor.requests + home.requests)
+
+
+@pytest.mark.asyncio
+async def test_selftest_probes_blocked_sites_through_the_fallback_exits(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from recce.modules import selftest
+
+    site = {"name": "Walled", "category": "social", "url": "https://walled.test/{u}",
+            "method": "status", "found": [200], "missing": [404], "known": ["alice"]}
+    primary = SiteClient({"walled.test": "block"})
+    open_exit = SiteClient({}, proxy=TOR)
+    monkeypatch.setattr(selftest, "_client_for_exit", lambda client, exit_, browser: open_exit)
+
+    report = await selftest.run_selftest(
+        primary, [site], impersonate=False, per_domain_rate=0, fallback_exits=(Exit("tor", TOR),),
+    )
+
+    entry = report["sites"]["Walled"]
+    assert entry["status"] == selftest.BLOCKED
+    assert entry["exits"][TOR_LABEL]["status"] == selftest.HEALTHY
+    assert open_exit.closed

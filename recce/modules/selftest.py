@@ -15,6 +15,12 @@ definition:
 - ``error``           transport errors, 5xx, ambiguous markers
 - ``unverified``      no known account; the canary came back clean
 
+A ``blocked`` site is also probed through each fallback exit (see
+`core/egress.py`) and the verdicts are stored under ``exits``, keyed by exit
+label. Username searches read them (`exit_order`) to retry a walled site
+through an exit that worked for it first, and to skip exits that are walled
+for it too.
+
 Results persist to ``~/.cache/recce/selftest.json``. Username searches read
 that file and skip definitions whose last selftest was a false positive (see
 `search_flags`), unless overridden with ``--flagged-sites`` or
@@ -33,7 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__
-from ..core.egress import egress_info
+from ..core.egress import Exit, egress_info
 from ..core.http import HttpClient, ImpersonatingClient, impersonation_available
 from ..core.result import Hit, Status
 from .username import (
@@ -43,6 +49,7 @@ from .username import (
     PerDomainThrottle,
     _canary_username,
     _check_site,
+    _client_for_exit,
     _load_sites,
     _load_wmn_sites,
 )
@@ -186,8 +193,12 @@ async def run_selftest(
     impersonate: bool = True,
     per_domain_rate: float = DEFAULT_PER_DOMAIN_RATE,
     on_progress: Any = None,
+    fallback_exits: tuple[Exit, ...] = (),
 ) -> dict[str, Any]:
-    """Probe every site and return a report dict (see `save_report`)."""
+    """Probe every site and return a report dict (see `save_report`).
+
+    Sites that come back ``blocked`` are probed again through each of
+    `fallback_exits`; the verdicts go in the site's ``exits``."""
     egress = await egress_info(client)
     probe_client: Any = client
     browser = None
@@ -203,11 +214,20 @@ async def run_selftest(
             on_progress(site["name"], result["status"])
         return site["name"], result
 
+    exit_clients: list[tuple[Any, str]] = []
     try:
         results = dict(await asyncio.gather(*(one(s) for s in sites)))
+        blocked = [s for s in sites if results[s["name"]]["status"] == BLOCKED]
+        if blocked:
+            for exit_ in fallback_exits:
+                via = _client_for_exit(client, exit_, browser=browser is not None)
+                exit_clients.append((via, exit_.label))
+            await _probe_exits(exit_clients, blocked, results, canary, throttle)
     finally:
         if browser is not None:
             await browser.aclose()
+        for via, _ in exit_clients:
+            await via.aclose()
 
     return {
         "version": SCHEMA_VERSION,
@@ -220,6 +240,26 @@ async def run_selftest(
         "summary": summarise(results),
         "sites": results,
     }
+
+
+async def _probe_exits(
+    exit_clients: list[tuple[Any, str]],
+    blocked: list[dict[str, Any]],
+    results: dict[str, dict[str, Any]],
+    canary: str,
+    throttle: PerDomainThrottle,
+) -> None:
+    """Record how each fallback exit fares on the sites the primary exit is walled on."""
+    for via, label in exit_clients:
+
+        async def one(site: dict[str, Any], via: Any = via, label: str = label) -> None:
+            verdict = await check_site_health(via, site, canary, throttle=throttle)
+            results[site["name"]].setdefault("exits", {})[label] = {
+                "status": verdict["status"],
+                "detail": verdict["detail"],
+            }
+
+        await asyncio.gather(*(one(s) for s in blocked))
 
 
 def summarise(results: dict[str, dict[str, Any]]) -> dict[str, int]:
@@ -323,6 +363,50 @@ def search_flags(
             continue
         out[site["name"]] = entry
     return out
+
+
+# Verdicts that make a fallback exit worth trying first, or not worth trying.
+_EXIT_WORKS = (HEALTHY, UNVERIFIED)
+_EXIT_WALLED = (BLOCKED, FALSE_POSITIVE, FALSE_NEGATIVE)
+
+
+def exit_order(
+    sites: list[dict[str, Any]],
+    labels: list[str],
+    *,
+    path: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, list[str]]:
+    """Per site, the order to try the fallback exits `labels` in.
+
+    Starts from the configured order. Where the last selftest (fresh, same
+    definition) probed the site through an exit: exits that worked go first,
+    exits that were walled or gave wrong answers are dropped, exits that only
+    errored (maybe transient) go last, exits it never tried keep their place.
+    """
+    state = load_state(path)
+    now = now or _now()
+    out: dict[str, list[str]] = {}
+    for site in sites:
+        order = list(labels)
+        entry = (state or {"sites": {}})["sites"].get(site["name"]) or {}
+        verdicts = entry.get("exits")
+        if verdicts and entry.get("fingerprint") == site_fingerprint(site) and _fresh(entry, now):
+            status = {label: (verdicts.get(label) or {}).get("status") for label in labels}
+            works = [label for label in labels if status[label] in _EXIT_WORKS]
+            errored = [label for label in labels if status[label] == ERROR]
+            walled = {label for label in labels if status[label] in _EXIT_WALLED}
+            rest = [label for label in labels if label not in works and label not in errored and label not in walled]
+            order = works + rest + errored
+        out[site["name"]] = order
+    return out
+
+
+def _fresh(entry: dict[str, Any], now: datetime) -> bool:
+    try:
+        return now - datetime.fromisoformat(entry["checked_at"]) <= FLAG_MAX_AGE
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def skipped_hit(site: dict[str, Any], entry: dict[str, Any], username: str) -> Hit:

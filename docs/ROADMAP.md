@@ -76,8 +76,12 @@ fallback exit that retries 401/403/429 probes (canary check through the same
 exit), the exit recorded on every report and fallback hit, and `doctor`
 showing each exit's public IP. The box has Tor as the fallback. Open: a
 home-connection or residential exit needs a proxy endpoint outside the VPN.
-Some sites block Tor as hard as VPNs, so per-site exit preferences
-(learned from selftest results) would be the next step.
+Per-site exit preferences: `recce selftest` also probes every `blocked`
+site through each fallback exit and stores the verdicts under `exits`;
+searches then retry a walled site through the exit that worked for it first,
+skip exits that are walled for it, and put exits that only errored last
+(`selftest.exit_order`). Verdicts expire after 30 days or when the site
+definition changes; `--flagged-sites off` ignores them.
 
 ### 6. More sources — first batch shipped
 Shipped: Hudson Rock `search-by-domain`, Hunter domain search (email
