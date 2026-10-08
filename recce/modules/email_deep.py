@@ -420,7 +420,7 @@ SKIPPED_USER_SCANNER_MODULES: frozenset[str] = frozenset(
 
 @dataclass(frozen=True)
 class DeepProbe:
-    backend: str  # "user-scanner" or "holehe"
+    backend: str  # "recce", "user-scanner" or "holehe"
     category: str
     name: str
     fn: Any
@@ -516,10 +516,21 @@ def _load_holehe() -> list[DeepProbe]:
     return out
 
 
+def _load_recce() -> list[DeepProbe]:
+    """recce's own checks, for services neither library covers properly."""
+    from . import microsoft_account
+
+    async def microsoft(email: str) -> Hit:
+        # Same exit as the rest of the run, or a RECCE_DEEP_EXITS pin.
+        return await microsoft_account.check(email, proxy=_exit_proxy.get())
+
+    return [DeepProbe("recce", "email", "microsoft", microsoft)]
+
+
 def _load_modules() -> list[DeepProbe]:
-    """Every audited probe: the user-scanner allowlist, then holehe's
-    remaining modules for sites user-scanner lacks."""
-    return _load_user_scanner() + _load_holehe()
+    """Every audited probe: recce's own checks, the user-scanner allowlist,
+    then holehe's remaining modules for sites user-scanner lacks."""
+    return _load_recce() + _load_user_scanner() + _load_holehe()
 
 
 def _holehe_to_hit(probe: DeepProbe, raw: dict[str, Any], elapsed_ms: int) -> Hit:
@@ -646,6 +657,10 @@ async def _run_one(
     out: list[dict[str, Any]] = []
     result: Any = None
     try:
+        if probe.backend == "recce":
+            hit = await asyncio.wait_for(probe.fn(email), timeout=max(per_module_timeout * 2, 30.0))
+            hit.elapsed_ms = int((time.perf_counter() - started) * 1000)
+            return hit
         if probe.backend == "holehe":
             await asyncio.wait_for(probe.fn(email, client, out), timeout=per_module_timeout)
         else:
