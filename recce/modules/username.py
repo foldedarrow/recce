@@ -545,8 +545,10 @@ async def _retry_blocked(
     hits: list[Hit],
     username: str,
     throttle: PerDomainThrottle | None,
+    only: set[str] | None = None,
 ) -> None:
-    """Re-probe bot-walled sites through the fallback exit, in place."""
+    """Re-probe bot-walled sites (just those named in `only`, if given) through
+    the fallback exit, in place."""
 
     async def retry(index: int) -> None:
         blocked = hits[index]
@@ -572,7 +574,7 @@ async def _retry_blocked(
             blocked.extra["fallback"] = record
             blocked.extra["fallback_attempts"] = tried
 
-    await asyncio.gather(*(retry(i) for i, hit in enumerate(hits) if _is_blocked(hit)))
+    await asyncio.gather(*(retry(i) for i, hit in enumerate(hits) if _is_blocked(hit) and (only is None or hit.source in only)))
 
 
 def _client_for_exit(client: Any, exit_: Exit, *, browser: bool) -> Any:
@@ -740,9 +742,22 @@ async def _search_username(
     async def finalise(results: list[Hit]) -> Report:
         verify_clients: dict[str, Any] = {}
         chain = [fallback] if isinstance(fallback, tuple) else (fallback or [])
-        for fallback_client, label in chain:  # in order; each retries only what's still blocked
-            await _retry_blocked(fallback_client, label, sites_by_name, results, username, throttle)
-            verify_clients[label] = fallback_client
+        verify_clients.update({label: fallback_client for fallback_client, label in chain})
+        # Each site tries the exits in its own order (selftest learns which work
+        # for it); round N retries, per exit, the sites whose Nth choice it is.
+        order = selftest.exit_order(sites, [label for _, label in chain]) if policy != "off" else {
+            name: [label for _, label in chain] for name in sites_by_name
+        }
+        for rnd in range(len(chain)):
+            for fallback_client, label in chain:
+                names = {n for n, o in order.items() if rnd < len(o) and o[rnd] == label}
+                if names:
+                    await _retry_blocked(
+                        fallback_client, label, sites_by_name, results, username, throttle, only=names
+                    )
+        for hit in results:
+            if chain and _is_blocked(hit) and not order.get(hit.source) and "fallback" not in hit.extra:
+                hit.extra["fallback_skipped"] = "selftest: every fallback exit is walled for this site"
         if verify_found:
             await _verify_found(
                 client, sites_by_name, results, throttle, verify_clients, username=username

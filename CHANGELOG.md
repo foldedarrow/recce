@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Per-site exit preferences.** `recce selftest` probes bot-walled sites through
+  the fallback exits (`--exits/--no-exits`, `--fallback-proxy`) and records which
+  work. Username searches then try the working exit first and skip exits known
+  to be walled for that site, instead of one fixed order for every site.
 - **Cross-report attribution.** Accounts from different searches (a root and its
   pivots, or all runs in a case) that profile data links — cross-links, shared
   email, same avatar, same display name — are grouped as one *identity*: a

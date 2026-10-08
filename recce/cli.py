@@ -15,7 +15,14 @@ from rich.text import Text
 
 from . import __version__
 from .config import Settings
-from .core.egress import Exit, configured_exits, egress_info, resolve_exit, resolve_fallback
+from .core.egress import (
+    Exit,
+    configured_exits,
+    egress_info,
+    fallback_exits,
+    resolve_exit,
+    resolve_fallback,
+)
 from .core.http import http_client
 from .core.investigations import INVESTIGATION_STATUSES, InvestigationStore
 from .core.output import (
@@ -954,9 +961,19 @@ def cmd_selftest(
         DEFAULT_PER_DOMAIN_RATE, "--per-domain-rate", min=0.0,
         help="Max probes per second to the same domain. Use 0 to disable.",
     ),
+    exits: bool = typer.Option(
+        True, "--exits/--no-exits",
+        help="Also probe blocked sites through the fallback exits (--fallback-proxy / "
+        "RECCE_USERNAME_FALLBACK_PROXY), so searches learn which exit works per site.",
+    ),
+    fallback_proxy: str | None = typer.Option(
+        None, "--fallback-proxy", help="Fallback exit(s) to try on blocked sites: exit names, "
+        "comma-separated. Default: RECCE_USERNAME_FALLBACK_PROXY.",
+    ),
 ) -> None:
     settings = Settings.load()
     proxy = _exit_for("username", proxy).proxy
+    chain = fallback_exits(_fallback_for(fallback_proxy)) if exits else ()
     sites = select_sites(
         categories=_parse_csv_set(category), names=_parse_csv_set(only), include_nsfw=nsfw,
     )
@@ -976,6 +993,7 @@ def cmd_selftest(
             if json_output:
                 return await run_selftest(
                     client, sites, impersonate=impersonate, per_domain_rate=per_domain_rate,
+                    fallback_exits=chain,
                 )
             with Progress(
                 SpinnerColumn(), TextColumn("{task.description}"), BarColumn(bar_width=None),
@@ -986,6 +1004,7 @@ def cmd_selftest(
                 return await run_selftest(
                     client, sites, impersonate=impersonate, per_domain_rate=per_domain_rate,
                     on_progress=lambda _name, _status: progress.advance(task),
+                    fallback_exits=chain,
                 )
 
     report = asyncio.run(run())
@@ -1019,7 +1038,8 @@ def _render_selftest(report: dict, changes: list[dict], *, show_all: bool, saved
             style = _HEALTH_STYLE.get(e["status"], "")
             table.add_row(
                 name, e["category"], f"[{style}]{e['status']}[/]",
-                _probe_cell(e.get("known")), _probe_cell(e.get("canary")), e.get("detail") or "",
+                _probe_cell(e.get("known")), _probe_cell(e.get("canary")),
+                " · ".join(filter(None, [e.get("detail"), _exits_cell(e.get("exits"))])),
             )
         console.print(table)
     summary = Table(show_header=False, box=None, padding=(0, 2))
@@ -1037,6 +1057,12 @@ def _render_selftest(report: dict, changes: list[dict], *, show_all: bool, saved
             "(override: --flagged-sites mark|off).[/]"
         )
     console.print("[dim]'blocked' depends on the egress IP and is not counted as broken.[/]")
+
+
+def _exits_cell(verdicts: dict | None) -> str:
+    if not verdicts:
+        return ""
+    return "via " + ", ".join(f"{label.split(' (')[0]}: {v['status']}" for label, v in verdicts.items())
 
 
 def _probe_cell(probe: dict | None) -> str:
