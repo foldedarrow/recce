@@ -14,8 +14,11 @@ python3 -m venv /opt/recce/.venv          # Python 3.11–3.13 recommended
 /opt/recce/.venv/bin/pip install '/opt/recce[gui]'
 ```
 
-Optional API keys go in `/etc/recce/web.env` (see `.env.example`); recce works
-without them, degrading paid sources to `skipped`.
+Optional API keys live in the service user's `~/.config/recce/.env` — the GUI's
+API Keys tab writes there (see `.env.example` for the names). recce works
+without them, degrading paid sources to `skipped`. `/etc/recce/web.env` is for
+service settings such as `RECCE_TIMEOUT`; only put a key there to override the
+user file, and don't copy blank placeholders in.
 
 ## 2. systemd service
 

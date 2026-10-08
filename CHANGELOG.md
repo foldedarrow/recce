@@ -36,6 +36,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- A blank environment variable (e.g. `HIBP_API_KEY=` left in a systemd
+  `EnvironmentFile`) no longer masks the real key in `~/.config/recce/.env`;
+  after a service restart the web GUI showed — and used — no API keys.
 - Shodan no longer reports a valid free-plan key as "invalid or unauthorized".
   A 401 is reported as an invalid key; a 403 "requires membership" is a skipped
   result explaining that the plan lacks DNS API access; other 403s surface
