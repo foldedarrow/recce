@@ -28,7 +28,7 @@
     {"name": "Mastodon (fosstodon.org)", "category": "social", "url": "https://fosstodon.org/@{u}", "method": "status", "found": [200], "missing": [404], "known": ["kev"]},
     {"name": "Tumblr", "category": "social", "url": "https://{u}.tumblr.com", "method": "status", "found": [200], "missing": [404, 410]},
     {"name": "About.me", "category": "social", "url": "https://about.me/{u}", "method": "status", "found": [200], "missing": [404]},
-    {"name": "Gravatar", "category": "social", "url": "https://gravatar.com/{u}", "probe": "https://gravatar.com/{u}.json", "method": "status", "found": [200], "missing": [404]},
+    {"name": "Gravatar", "category": "social", "url": "https://gravatar.com/{u}", "probe": "https://gravatar.com/{u}.json", "method": "status", "found": [200], "missing": [404], "known": ["beau", "matt"]},
     {"name": "Vimeo", "category": "video", "url": "https://vimeo.com/{u}", "method": "status", "found": [200], "missing": [404]},
     {"name": "Dailymotion", "category": "video", "url": "https://www.dailymotion.com/{u}", "method": "status", "found": [200], "missing": [404], "head_request": true, "known": ["france24"]},
     {"name": "TikTok", "category": "video", "url": "https://www.tiktok.com/@{u}", "method": "absent", "marker": "Couldn't find this account"},
@@ -58,7 +58,7 @@
     {"name": "Medium", "category": "blog", "url": "https://medium.com/@{u}", "method": "status", "found": [200], "missing": [404]},
     {"name": "Substack", "category": "blog", "url": "https://substack.com/@{u}", "method": "redirect_match", "no_redirect": true, "missing_location": "/search/"},
     {"name": "Wordpress", "category": "blog", "url": "https://{u}.wordpress.com", "method": "redirect_match", "no_redirect": true, "missing_location": "/typo/", "known": ["matt", "dailypost"]},
-    {"name": "Blogger", "category": "blog", "url": "https://{u}.blogspot.com", "method": "status", "found": [200], "missing": [404]},
+    {"name": "Blogger", "category": "blog", "url": "https://{u}.blogspot.com", "method": "status", "found": [200], "missing": [404], "known": ["googleblog", "buzz"]},
     {"name": "Steemit", "category": "blog", "url": "https://steemit.com/@{u}", "method": "status", "found": [200], "missing": [404]},
     {"name": "Patreon", "category": "creator", "url": "https://www.patreon.com/{u}", "method": "absent", "marker": "Page not found"},
     {"name": "Ko-fi", "category": "creator", "url": "https://ko-fi.com/{u}", "method": "status", "found": [200], "missing": [404]},
@@ -72,7 +72,7 @@
     {"name": "Fitbit", "category": "fitness", "url": "https://www.fitbit.com/user/{u}", "method": "status", "found": [200], "missing": [404], "known": ["fitbit"]},
     {"name": "OpenStreetMap", "category": "civic", "url": "https://www.openstreetmap.org/user/{u}", "method": "status", "found": [200], "missing": [404]},
     {"name": "Wikipedia", "category": "civic", "url": "https://en.wikipedia.org/wiki/User:{u}", "method": "absent", "marker": "Wikipedia does not have a user page with this exact name", "known": ["Jimbo_Wales"]},
-    {"name": "Telegram", "category": "messaging", "url": "https://t.me/{u}", "method": "absent", "marker": "If you have <strong>Telegram</strong>, you can contact"},
+    {"name": "Telegram", "category": "messaging", "url": "https://t.me/{u}", "method": "absent", "marker": "If you have <strong>Telegram</strong>, you can contact", "known": ["durov", "telegram"]},
     {"name": "Snapchat", "category": "messaging", "url": "https://www.snapchat.com/add/{u}", "method": "absent", "marker": "Page Not Found"},
     {"name": "OpenSea", "category": "web3", "url": "https://opensea.io/{u}", "method": "status", "found": [200], "missing": [404], "known": ["opensea", "pranksy"]}
   ]
