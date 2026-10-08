@@ -21,13 +21,14 @@ from recce.modules.archive import ArchiveRateLimitError, calendar_url, capture
 
 from .base import Provider, ProviderContext
 
-# site name → profile URL ({u} = username). Kept short: archive.org rate-limits.
+# site name → profile URL ({u} = username), most useful first: lookups run
+# one at a time within a time budget, so the tail may go unchecked.
 PROFILE_URLS: dict[str, str] = {
+    "GitHub": "github.com/{u}",
+    "Reddit": "reddit.com/user/{u}",
     "Twitter": "twitter.com/{u}",
     "Instagram": "instagram.com/{u}/",
     "Facebook": "facebook.com/{u}",
-    "Reddit": "reddit.com/user/{u}",
-    "GitHub": "github.com/{u}",
     "YouTube": "youtube.com/@{u}",
     "TikTok": "tiktok.com/@{u}",
     "Medium": "medium.com/@{u}",
@@ -41,7 +42,10 @@ PROFILE_URLS: dict[str, str] = {
     "Myspace": "myspace.com/{u}",
 }
 SPA_SITES = {"Twitter", "Instagram", "TikTok"}
-CONCURRENCY = 3
+# archive.org's CDX answers 503 to parallel requests from one IP, so go one
+# at a time, and stop after this long (a slow lookup takes 10-30s).
+CONCURRENCY = 1
+TIME_BUDGET = 180.0
 _HOST_ALIASES = {"x.com": "twitter.com"}
 
 
@@ -65,12 +69,16 @@ class WaybackProfilesProvider(Provider):
         sem = asyncio.Semaphore(CONCURRENCY)
         limited = asyncio.Event()
         failed: list[str] = []
+        unchecked: list[str] = []
         started = time.perf_counter()
 
         async def check(site: str, pattern: str) -> Hit | None:
             url = pattern.format(u=target)
             async with sem:
                 if limited.is_set():
+                    return None
+                if time.perf_counter() - started > TIME_BUDGET:
+                    unchecked.append(site)
                     return None
                 try:
                     found = await capture(ctx.client, url)
@@ -111,11 +119,15 @@ class WaybackProfilesProvider(Provider):
                 self.make_hit("archive", Status.SKIPPED, elapsed_ms=elapsed,
                               summary="archive.org rate limit (429): some sites not checked")
             )
-        if failed:
+        if failed or unchecked:
+            parts = []
+            if failed:
+                parts.append(f"archive.org lookup failed for {', '.join(sorted(failed))}")
+            if unchecked:
+                parts.append(f"not checked (time budget): {', '.join(unchecked)}")
             hits.append(
-                self.make_hit("archive", Status.UNKNOWN, elapsed_ms=elapsed,
-                              summary=f"archive.org lookup failed for {', '.join(sorted(failed))}",
-                              extra={"failed_sites": sorted(failed)})
+                self.make_hit("archive", Status.UNKNOWN, elapsed_ms=elapsed, summary="; ".join(parts),
+                              extra={"failed_sites": sorted(failed), "unchecked_sites": unchecked})
             )
         if not hits:
             hits.append(
