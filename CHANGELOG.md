@@ -9,6 +9,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Profile metadata from site pages**: FOUND username hits take name,
+  avatar, bio and `rel="me"` links from the page's OpenGraph/Twitter/title
+  tags (live: 108 of 214 hits for a large org handle), minus anything the
+  canary page shares. rel=me links to known profile hosts become pivots.
+  Attribution now ignores display names containing the handle (site
+  templates), treats generic share images as default avatars, and never
+  links two definitions of the same site. On that live run this removed 5
+  false clusters and kept the 2 real ones (Instagram↔Threads avatar,
+  GitHub↔Open Collective link).
 - More sources (roadmap #6, first batch):
   - **Domain:** Hudson Rock infostealer counts (infected employees/users,
     malware families, and the domain URLs employee logins were stolen for;
