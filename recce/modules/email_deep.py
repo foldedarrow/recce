@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import fnmatch
 import importlib
 import secrets
 import string
@@ -39,6 +40,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
+from ..core.egress import Exit, probe_exit_rules
 from ..core.output import console
 from ..core.result import Hit, Status
 
@@ -430,6 +432,8 @@ class DeepProbe:
 _exit_proxy: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "deep_exit_proxy", default=None
 )
+# Whether that exit must resolve targets to IPv4 (see RECCE_IPV4_EXITS).
+_exit_ipv4: contextvars.ContextVar[bool] = contextvars.ContextVar("deep_exit_ipv4", default=False)
 
 
 def _exit_async_client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
@@ -465,6 +469,10 @@ def _install_exit_shims(module: types.ModuleType) -> None:
             proxy = _exit_proxy.get()
             if proxy and not kwargs.get("proxies"):
                 kwargs["proxies"] = {"http": proxy, "https": proxy}
+                if _exit_ipv4.get() and "curl_options" not in kwargs:
+                    from curl_cffi import CurlOpt
+
+                    kwargs["curl_options"] = {CurlOpt.IPRESOLVE: 1}  # CURL_IPRESOLVE_V4
             return curl_requests.Session(*args, **kwargs)
 
         module.requests = _ModuleShim(curl_requests, Session=session)  # type: ignore[attr-defined]
@@ -693,18 +701,18 @@ def _canary_email(email: str) -> str:
 async def _verify_found(
     modules: list[DeepProbe],
     hits: list[Hit],
-    client: httpx.AsyncClient,
-    timeout: float,
+    run: Any,
     canary: str,
 ) -> None:
     """Re-probe every FOUND site with a made-up address. A site that also
     "finds" the made-up one says yes to anything, so the hit is unverifiable
-    and is downgraded (mirrors the username canary)."""
+    and is downgraded (mirrors the username canary). `run(probe, address)`
+    probes through the same exit the hit came from."""
     by_name = {probe.name: probe for probe in modules}
     found = [hit for hit in hits if hit.status is Status.FOUND and hit.source in by_name]
 
     async def check(hit: Hit) -> None:
-        probe = await _run_one(by_name[hit.source], canary, client, per_module_timeout=timeout)
+        probe = await run(by_name[hit.source], canary)
         hit.extra["canary"] = {"email": canary, "status": probe.status.value}
         if probe.status is Status.FOUND:
             hit.status = Status.UNKNOWN
@@ -724,6 +732,7 @@ async def deep_email_probes(
     retry: bool = True,
     retry_wait: float = 15.0,
     verify: bool = True,
+    probe_exits: list[tuple[str, Exit]] | None = None,
 ) -> list[Hit]:
     """Run every audited probe against the given email, concurrently.
 
@@ -733,16 +742,50 @@ async def deep_email_probes(
 
     If `verify=True`, every FOUND site is re-probed with a made-up address at
     the same domain and downgraded to unknown if it "finds" that one too.
+
+    `probe_exits` pins checks to exits by name glob (first match wins); it
+    defaults to RECCE_DEEP_EXITS. Unmatched checks use `proxy`. A pinned
+    check records its exit on the hit as `extra["exit"]`.
     """
     modules = _load_modules()
+    rules = probe_exit_rules() if probe_exits is None else probe_exits
     _exit_proxy.set(proxy)
 
     # Holehe modules expect an httpx.AsyncClient. They often set their own
-    # headers per-request, so we leave the client's defaults alone.
-    client_kwargs: dict[str, Any] = {"timeout": timeout, "follow_redirects": True}
-    if proxy:
-        client_kwargs["proxy"] = proxy
-    client = httpx.AsyncClient(**client_kwargs)
+    # headers per-request, so we leave the client's defaults alone. One client
+    # per exit in use; the run's own exit is created up front.
+    clients: dict[str | None, httpx.AsyncClient] = {}
+
+    def client_for(exit_proxy: str | None) -> httpx.AsyncClient:
+        if exit_proxy not in clients:
+            client_kwargs: dict[str, Any] = {"timeout": timeout, "follow_redirects": True}
+            if exit_proxy:
+                client_kwargs["proxy"] = exit_proxy
+            clients[exit_proxy] = httpx.AsyncClient(**client_kwargs)
+        return clients[exit_proxy]
+
+    client_for(proxy)
+
+    def exit_for(probe: DeepProbe) -> Exit | None:
+        name = probe.name.lower()
+        return next((rule_exit for pattern, rule_exit in rules if fnmatch.fnmatchcase(name, pattern)), None)
+
+    async def probe_once(probe: DeepProbe, address: str) -> Hit:
+        """One probe, through its pinned exit if a rule matches. Runs inside
+        its own asyncio task, so the context-variable exit stays per probe."""
+        pinned = exit_for(probe)
+        if pinned is None:
+            return await _run_one(probe, address, client_for(proxy), per_module_timeout=timeout)
+        proxy_token = _exit_proxy.set(pinned.proxy)
+        ipv4_token = _exit_ipv4.set(pinned.ipv4)
+        try:
+            hit = await _run_one(probe, address, client_for(pinned.proxy), per_module_timeout=timeout)
+        finally:
+            _exit_proxy.reset(proxy_token)
+            _exit_ipv4.reset(ipv4_token)
+        hit.extra["exit"] = pinned.label
+        return hit
+
     sem = asyncio.Semaphore(max(1, max_concurrency))
 
     async def run_pass(
@@ -751,7 +794,7 @@ async def deep_email_probes(
     ) -> list[Hit]:
         async def guarded_run(probe: DeepProbe) -> Hit:
             async with sem:
-                return await _run_one(probe, email, client, per_module_timeout=timeout)
+                return await probe_once(probe, email)
 
         if not show_progress:
             return list(await asyncio.gather(*(guarded_run(p) for p in targets)))
@@ -805,7 +848,8 @@ async def deep_email_probes(
         if retry:
             await retry_rate_limited(results)
         if verify:
-            await _verify_found(modules, results, client, timeout, _canary_email(email))
+            await _verify_found(modules, results, probe_once, _canary_email(email))
         return results
     finally:
-        await client.aclose()
+        for client in clients.values():
+            await client.aclose()

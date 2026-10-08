@@ -22,6 +22,11 @@ fallback exits (browser-fingerprint probes). Username searches can also retry
 bot-walled probes (HTTP 401/403/429) through fallback exits, tried in order,
 each only for probes the previous exits left blocked:
 `--fallback-proxy tor,home` or `RECCE_USERNAME_FALLBACK_PROXY=tor,home`.
+
+Individual deep-email checks can be pinned to an exit with
+`RECCE_DEEP_EXITS="alza.*=home"` (`;`-separated `glob=exit` rules, first match
+wins), e.g. for sites that only answer from a residential connection. Checks
+no rule matches keep the run's exit.
 """
 
 from __future__ import annotations
@@ -161,6 +166,21 @@ def resolve_fallback(
     return None
 
 
+def probe_exit_rules(env: dict[str, str] | None = None) -> list[tuple[str, Exit]]:
+    """`RECCE_DEEP_EXITS` as ordered (glob, exit) rules for deep-email checks."""
+    env = env if env is not None else dict(os.environ)
+    exits, v4 = named_exits(env), ipv4_exit_names(env)
+    rules: list[tuple[str, Exit]] = []
+    for entry in env.get("RECCE_DEEP_EXITS", "").split(";"):
+        pattern, sep, value = entry.partition("=")
+        if not sep or not pattern.strip() or not value.strip():
+            continue
+        chosen = parse_exit(value, exits, v4)
+        if chosen is not None:
+            rules.append((pattern.strip().lower(), chosen))
+    return rules
+
+
 def configured_exits(env: dict[str, str] | None = None) -> list[tuple[str, Exit]]:
     """Every exit the configuration mentions, with what uses it (for `doctor`)."""
     env = env if env is not None else dict(os.environ)
@@ -168,6 +188,8 @@ def configured_exits(env: dict[str, str] | None = None) -> list[tuple[str, Exit]
     chain = fallback_exits(resolve_fallback(env=env))
     for position, fallback in enumerate(chain, start=1):
         rows.append((f"username fallback {position}" if len(chain) > 1 else "username fallback", fallback))
+    for pattern, rule_exit in probe_exit_rules(env):
+        rows.append((f"deep email {pattern}", rule_exit))
     used = {e.proxy for _, e in rows}
     for name, url in named_exits(env).items():
         if url not in used:

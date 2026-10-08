@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- `RECCE_DEEP_EXITS` pins individual `email --deep` checks to a network exit
+  (`alza.*=home`; glob rules, first match wins), including their made-up-address
+  recheck. Pinned hits record the exit; `doctor` lists the rules.
 - Username fallback exits can be an ordered chain (`--fallback-proxy tor,home`,
   `RECCE_USERNAME_FALLBACK_PROXY=tor,home`): each exit retries only the probes
   the earlier ones left blocked, and every attempt is recorded on the hit.

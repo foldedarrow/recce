@@ -75,8 +75,9 @@ from holehe) and 4 for the pm.me address. Every hit passed the canary.
 - The Proton exit gave the most answers. Tor was worse: 26 modules that
   answer on Proton error over Tor, eventbrite and spotify among them.
 - The five `shopping/alza_*` modules get a 403 on Proton and Tor but answer
-  from the residential line. They stay in the run list and show up as
-  errors on the default exit.
+  from the residential line. They stay in the run list; with
+  `RECCE_DEEP_EXITS="alza.*=home"` they run through the residential exit
+  and answer, otherwise they show up as errors on the default exit.
 - `annaabi`, `github`, `nytimes`, `threadless` and `vimeo` are bot-walled
   on every exit, and `firefox` and `emirates` error everywhere. None of
   these run.

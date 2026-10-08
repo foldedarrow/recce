@@ -88,10 +88,10 @@ client). Still open, below.
   then [user-scanner](https://github.com/kaifcodec/user-scanner) 1.5.2.1
   ([docs/USER_SCANNER_AUDIT.md](USER_SCANNER_AUDIT.md), 18 proven sites)
   became the main backend, with holehe kept for 18 sites user-scanner lacks:
-  117 probes, 20 proven, every hit canary-checked. Still open: the 5 Alza
-  modules answer only from a residential exit, so a per-module exit
-  preference would help, and each user-scanner release needs a re-audit
-  before the pin moves.
+  117 probes, 20 proven, every hit canary-checked. The 5 Alza
+  modules answer only from a residential exit; `RECCE_DEEP_EXITS="alza.*=home"`
+  now pins them there. Each user-scanner release needs a re-audit before the
+  pin moves.
 - **Phone:** Ofcom numbering data — **shipped**: an offline index of Ofcom's
   weekly allocation files (`recce/modules/ofcom.py`, refreshed by
   `recce update`) gives +44 numbers their originally allocated provider,
