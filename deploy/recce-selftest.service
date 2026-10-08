@@ -1,0 +1,24 @@
+# One-shot: check every username site definition (known account + canary) and
+# save ~/.cache/recce/selftest.json, which searches use to skip false-positive
+# sites. Paired with recce-selftest.timer; runs after recce-update when both fire.
+[Unit]
+Description=recce: username site definition selftest
+After=network-online.target recce-update.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=youruser
+Group=youruser
+Environment=HOME=/home/youruser
+# Wide enough that the journal keeps the results table readable.
+Environment=COLUMNS=160
+EnvironmentFile=-/etc/recce/web.env
+ExecStart=/opt/recce/.venv/bin/recce selftest
+Nice=10
+TimeoutStartSec=1h
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/home/youruser/.cache

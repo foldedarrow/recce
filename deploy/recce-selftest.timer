@@ -1,0 +1,11 @@
+# Weekly site selftest, a few hours after the Monday WMN refresh
+# (recce-update.timer: OnCalendar=weekly + up to 1h jitter).
+# Install both files, then: sudo systemctl enable --now recce-selftest.timer
+[Unit]
+Description=Weekly recce site definition selftest
+[Timer]
+OnCalendar=Mon *-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=30min
+[Install]
+WantedBy=timers.target

@@ -61,6 +61,19 @@ GUARDED_HTTP_STATUSES = {401, 403, 429}
 DEFAULT_PER_DOMAIN_RATE = 1.5
 DEFAULT_GUARDED_BACKOFF_SECONDS = 3.0
 DEFAULT_THROTTLE_JITTER_SECONDS = 0.25
+# Bot-wall interstitials. Specific to challenge/block pages: generic words such
+# as "captcha" also appear on ordinary profile pages. A challenge served with
+# HTTP 200 must not read as "account exists".
+CHALLENGE_MARKERS = {
+    "_cf_chl_opt": "Cloudflare challenge",
+    "<title>Just a moment...</title>": "Cloudflare challenge",
+    "Attention Required! | Cloudflare": "Cloudflare block",
+    "AwsWafIntegration": "AWS WAF challenge",
+    "captcha-delivery.com": "DataDome challenge",
+    "px-captcha": "PerimeterX challenge",
+    "/_Incapsula_Resource": "Imperva challenge",
+    "sgcaptcha": "SiteGround captcha",
+}
 # Status precedence when several site definitions point at the same profile.
 _STATUS_RANK = {Status.FOUND: 0, Status.NOT_FOUND: 1, Status.UNKNOWN: 2, Status.ERROR: 3, Status.SKIPPED: 4}
 
@@ -127,6 +140,13 @@ def _throttle_key(url: str) -> str:
 
 def _format(value: str, username: str) -> str:
     return value.replace("{u}", username)
+
+
+def _detect_challenge(body: str) -> str | None:
+    for marker, label in CHALLENGE_MARKERS.items():
+        if marker in body:
+            return label
+    return None
 
 
 def _load_bundled_wmn_raw() -> str:
@@ -411,12 +431,18 @@ async def _check_site(
             elapsed_ms=elapsed_ms,
         )
 
-    needs_body = method not in ("status", "redirect_match")
-    body = resp.text if needs_body else ""
+    needs_body = method not in ("status", "redirect_match") or resp.status_code in (
+        200, 202, 403, 429, 503,
+    )
+    body = (resp.text or "") if needs_body else ""
     location = resp.headers.get("Location", "")
     if throttle is not None and resp.status_code in GUARDED_HTTP_STATUSES:
         throttle.backoff(probe_url)
-    status, note = _classify(site, resp.status_code, body, username, location=location)
+    challenge = _detect_challenge(body) if body else None
+    if challenge:
+        status, note = Status.UNKNOWN, f"{challenge} (HTTP {resp.status_code})"
+    else:
+        status, note = _classify(site, resp.status_code, body, username, location=location)
     extra = {
         "method": method,
         "probe_url": probe_url,
@@ -425,6 +451,8 @@ async def _check_site(
     }
     if location:
         extra["location"] = location
+    if challenge:
+        extra["challenge"] = challenge
     confidence = {
         Status.FOUND: 0.85,
         Status.NOT_FOUND: 0.9,
@@ -518,6 +546,7 @@ async def search_username(
     impersonate: bool = True,
     settings: Settings | None = None,
     skip_provider_ids: set[str] | None = None,
+    flagged_sites: str | None = None,
 ) -> Report:
     """Probe every site for `username`, then run username providers.
 
@@ -525,11 +554,16 @@ async def search_username(
     with a real Chrome fingerprint, which gets past far more bot walls than
     httpx. API providers (e.g. GitHub identity) always use `client`, recce's
     honest client. Providers run only when `settings` is given.
+
+    `flagged_sites` says what to do with definitions the last `recce selftest`
+    caught reporting made-up usernames: "skip" (default), "mark" (probe, then
+    downgrade), or "off". Defaults to $RECCE_FLAGGED_SITES, then "skip".
     """
     kwargs: dict[str, Any] = dict(
         only_categories=only_categories, exclude_categories=exclude_categories,
         include_nsfw=include_nsfw, show_progress=show_progress, per_domain_rate=per_domain_rate,
         guarded_backoff_seconds=guarded_backoff_seconds, verify_found=verify_found,
+        flagged_sites=flagged_sites,
     )
     if impersonate and impersonation_available():
         browser = ImpersonatingClient.from_client(client)
@@ -562,6 +596,7 @@ async def _search_username(
     per_domain_rate: float,
     guarded_backoff_seconds: float,
     verify_found: bool,
+    flagged_sites: str | None = None,
 ) -> Report:
     if not USERNAME_RE.match(username):
         raise ValueError(
@@ -574,6 +609,19 @@ async def _search_username(
     if exclude_categories:
         sites = [s for s in sites if s.get("category", "general") not in exclude_categories]
 
+    from . import selftest
+
+    policy = selftest.flagged_policy(flagged_sites)
+    flags = selftest.search_flags(sites) if policy != "off" else {}
+    skipped: list[Hit] = []
+    if policy == "skip":
+        for site in sites:
+            entry = flags.get(site["name"])
+            if entry and entry["status"] == selftest.FALSE_POSITIVE:
+                skipped.append(selftest.skipped_hit(site, entry, username))
+        skipped_names = {h.source for h in skipped}
+        sites = [s for s in sites if s["name"] not in skipped_names]
+
     report = Report(query=username, query_type="username")
     throttle = PerDomainThrottle(
         rate_per_second=per_domain_rate,
@@ -585,7 +633,10 @@ async def _search_username(
     async def finalise(results: list[Hit]) -> Report:
         if verify_found:
             await _verify_found(client, sites_by_name, results, throttle)
-        for r in _dedupe_by_profile(results):
+        for hit in results:
+            if hit.source in flags:
+                selftest.annotate_hit(hit, flags[hit.source])
+        for r in _dedupe_by_profile(results) + skipped:
             report.add(r)
         report.finish()
         return report

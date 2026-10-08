@@ -54,10 +54,13 @@ Show clusters ("these 5 profiles look like the same person") instead of a
 flat list.
 
 ### 4. Site definition health
-- `recce selftest`: run each site against its WMN `known` accounts and a
-  canary; report and auto-disable definitions that fail both ways.
-- Weekly job on the box (alongside the WMN refresh timer) that diffs the
-  results and flags breakage.
+- Shipped: `recce selftest` probes each definition with a `known` account
+  and a canary, records the egress IP, and saves verdicts that searches use
+  to skip false-positive sites (`--flagged-sites skip|mark|off`).
+- Shipped: weekly `recce-selftest.timer` after the WMN refresh; the journal
+  shows changes since the previous run.
+- Next: alerting on new breakage (the diff is in `selftest.json` → `changes`);
+  more `known` accounts for WMN sites whose only one has gone.
 - Consider importing Maigret's site DB (MIT) as a third source — ~3,000 sites
   vs WMN's ~700 — gated behind the same canary verification.
 

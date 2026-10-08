@@ -9,6 +9,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **`recce selftest`**: probes every username site definition with a known
+  account and a made-up one and classifies it healthy / false-positive /
+  false-negative / blocked / error / unverified, recording the egress IP
+  (blocks depend on it). `--category`, `--only`, `--json`. Results persist to
+  `~/.cache/recce/selftest.json`; username searches skip definitions whose
+  last selftest was a false positive (`--flagged-sites mark|off` or
+  `RECCE_FLAGGED_SITES` to override). Weekly `deploy/recce-selftest.timer`.
+  Custom sites gained `known` accounts; bot-challenge pages served with
+  HTTP 200 no longer read as "account exists".
 - **Recursive pivoting** for `username` and `email`: identifiers named in hits
   (GitHub identity's X handle and commit emails, GitHub commit logins, the
   GitHub profile email, Gravatar linked profiles, the email local-part) are
