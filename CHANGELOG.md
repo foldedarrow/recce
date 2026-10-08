@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Shodan free-plan fallback: when `/dns/domain` is refused for lack of a
+  Membership, `recce domain` looks up the domain's public IPs (up to 4) via
+  `/shodan/host` instead — org/ASN, open ports, CVEs, tags. The free plan only
+  covers some IPs; the rest are listed as restricted in the Shodan note.
 - Censys provider is now live (Pro): for `recce domain` it looks up each public
   A/AAAA address on the Censys Platform v3 API (ASN, country, exposed services)
   and the TLS certificate served on `:443` (subject, issuer, expiry, SAN count).

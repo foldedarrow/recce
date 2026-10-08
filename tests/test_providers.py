@@ -535,7 +535,10 @@ def test_append_registry_gate_hits_does_not_duplicate_provider_gate(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_shodan_free_plan_403_reports_plan_not_bad_key(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import recce.modules.domain_sources.common as common
+
     monkeypatch.setenv("RECCE_PRO_LICENCE", "test-pro")
+    monkeypatch.setattr(common, "dns_lookup", _fake_dns({}))
     client = DummyClient(DummyResponse(403, {"error": "Requires membership or higher to access"}))
 
     hits = await query_registered_providers(
@@ -543,6 +546,7 @@ async def test_shodan_free_plan_403_reports_plan_not_bad_key(monkeypatch) -> Non
         "domain",
         client,  # type: ignore[arg-type]
         _settings(shodan_api_key="shodan-key"),
+        skip_provider_ids={"censys"},
     )
 
     shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
@@ -550,6 +554,58 @@ async def test_shodan_free_plan_403_reports_plan_not_bad_key(monkeypatch) -> Non
     assert shodan_hits[0].status is Status.SKIPPED
     assert "key is valid" in (shodan_hits[0].summary or "")
     assert "Membership" in (shodan_hits[0].summary or "")
+    assert "fallback" not in (shodan_hits[0].summary or "")  # no IPs resolved, nothing to fall back to
+
+
+@pytest.mark.asyncio
+async def test_shodan_free_plan_falls_back_to_host_lookups(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import recce.modules.domain_sources.common as common
+    import recce.providers.shodan as shodan
+
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-pro")
+    monkeypatch.setattr(shodan, "REQUEST_SPACING", 0)
+    monkeypatch.setattr(
+        common, "dns_lookup", _fake_dns({"A": ["140.82.112.3", "185.70.42.37", "10.0.0.5"]})
+    )
+    membership = DummyResponse(403, {"error": "Requires membership or higher to access"})
+    host = {
+        "ip_str": "140.82.112.3",
+        "org": "GitHub, Inc.",
+        "asn": "AS36459",
+        "country_code": "US",
+        "ports": [443, 22, 80],
+        "vulns": ["CVE-2023-48795"],
+        "hostnames": ["lb-140-82-112-3-iad.github.com"],
+        "tags": [],
+    }
+    client = RoutingClient(
+        {
+            "/dns/domain/example.com": membership,
+            "/shodan/host/140.82.112.3": DummyResponse(200, host),
+            "/shodan/host/185.70.42.37": membership,
+        }
+    )
+
+    hits = await query_registered_providers(
+        "example.com",
+        "domain",
+        client,  # type: ignore[arg-type]
+        _settings(shodan_api_key="shodan-key"),
+        skip_provider_ids={"censys"},
+    )
+
+    shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
+    assert [hit.status for hit in shodan_hits] == [Status.SKIPPED, Status.FOUND]
+    note, host_hit = shodan_hits
+    assert "1/2 IP(s) available" in (note.summary or "")
+    assert "restricted: 185.70.42.37" in (note.summary or "")
+    assert "AS36459 GitHub, Inc." in (host_hit.summary or "")
+    assert "ports: 22, 80, 443" in (host_hit.summary or "")
+    assert "1 CVE(s): CVE-2023-48795" in (host_hit.summary or "")
+    assert host_hit.url == "https://www.shodan.io/host/140.82.112.3"
+    # private IPs are never sent to Shodan
+    assert not any("10.0.0.5" in url for url, _ in client.requests)
+    assert all(kwargs["params"] == {"key": "shodan-key"} for _, kwargs in client.requests)
 
 
 @pytest.mark.asyncio
