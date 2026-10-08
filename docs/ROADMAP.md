@@ -85,9 +85,12 @@ client). Still open, below.
   keyed providers for DeHashed / Intelligence X / Snusbase (summaries only,
   never secrets); holehe is unmaintained since 2023 — audit its modules or
   move to a maintained fork.
-- **Phone:** Ofcom numbering data (UK range holder / original network,
-  offline); a search-API provider (Brave Search / Google CSE / SerpAPI) so the
-  dork links return real results automatically instead of needing clicks.
+- **Phone:** Ofcom numbering data — **shipped**: an offline index of Ofcom's
+  weekly allocation files (`recce/modules/ofcom.py`, refreshed by
+  `recce update`) gives +44 numbers their originally allocated provider,
+  block status and area. Still open: a search-API provider (Brave Search /
+  Google CSE / SerpAPI) so the dork links return real results automatically
+  instead of needing clicks.
 - **Domain:** implement the VirusTotal and SecurityTrails placeholders
   (needs keys to verify live).
 

@@ -9,6 +9,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Ofcom numbering data** for +44 phone numbers (roadmap #6): the provider
+  the number's block was originally allocated to (labelled as such, since
+  ported numbers move), the block status and allocation date, and the area
+  for geographic numbers. It is an offline lookup against a bundled 480 KB
+  index of Ofcom's S1/S3/S5/S7/S8/S9 files and area-code table, and runs for
+  numbers libphonenumber rejects too, where a Free/Protected block explains
+  why. `recce update` now refreshes it as well (`--only ofcom|wmn`), and
+  `doctor` shows its block count and publish date.
+
 - **HTML dossier** for investigations (`recce investigations export <id>
   --format html`, GUI "HTML dossier" buttons, full or redacted): one
   self-contained page with a summary, an identity graph of the pivot chain

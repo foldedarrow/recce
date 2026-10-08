@@ -14,6 +14,7 @@ from ..core.egress import exit_label
 from ..core.http import HttpClient
 from ..core.result import Hit, Report, Status
 from ..providers import query_registered_providers
+from .ofcom import ofcom_hit
 
 
 def _parse(phone: str, default_region: str | None = None) -> Hit:
@@ -88,6 +89,14 @@ def _parse(phone: str, default_region: str | None = None) -> Hit:
         confidence=0.99 if valid else 0.4,
         elapsed_ms=int((time.perf_counter() - started) * 1000),
     )
+
+
+def _ofcom_hit(e164: str, national: str) -> Hit | None:
+    """Ofcom range-holder hit for UK-plan (+44) numbers, from the local index."""
+    parsed = phonenumbers.parse(e164)
+    if parsed.country_code != 44:
+        return None
+    return ofcom_hit(phonenumbers.national_significant_number(parsed), national)
 
 
 def number_format_variants(e164: str, intl: str, national: str) -> list[str]:
@@ -204,6 +213,13 @@ async def search_phone(
     report = Report(query=phone, query_type="phone", exit=exit_label(getattr(client, "proxy", None)))
     parsed_hit = _parse(phone, default_region)
     report.add(parsed_hit)
+
+    # Offline, so it runs for invalid numbers too: an unallocated Ofcom block
+    # explains why libphonenumber rejects a number.
+    if parsed_hit.extra.get("e164"):
+        ofcom = _ofcom_hit(parsed_hit.extra["e164"], parsed_hit.extra.get("national", ""))
+        if ofcom is not None:
+            report.add(ofcom)
 
     e164 = parsed_hit.extra.get("e164") if parsed_hit.is_found else None
     if not e164:
