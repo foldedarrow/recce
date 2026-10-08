@@ -36,6 +36,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Phone pivots: the Bing link returned unrelated pages because Bing mishandles
+  quoted digit strings and compact `+44…` numbers; it now searches the spaced
+  national, plain national and spaced international formats unquoted. The deep
+  X / Twitter dork now targets `x.com`, where new posts are indexed.
 - A blank environment variable (e.g. `HIBP_API_KEY=` left in a systemd
   `EnvironmentFile`) no longer masks the real key in `~/.config/recce/.env`;
   after a service restart the web GUI showed — and used — no API keys.

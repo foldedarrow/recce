@@ -90,3 +90,18 @@ async def test_deep_phone_probes_live_challenge_degrades_gracefully() -> None:
     assert "dork links" in (web.summary or "")
     # The reliable dork backbone is still delivered.
     assert any(h.category == "deep/platform" and h.status is Status.FOUND for h in hits)
+
+
+def test_bing_pivot_uses_unquoted_spaced_formats() -> None:
+    from urllib.parse import parse_qs, urlparse
+
+    from recce.modules.phone import _pivot_hits
+
+    hits = {hit.source: hit for hit in _pivot_hits("+442087438000", "+44 20 8743 8000", "020 8743 8000", "GB")}
+
+    bing_query = parse_qs(urlparse(hits["Bing web"].url or "").query)["q"][0]
+    assert bing_query == "020 8743 8000 OR 02087438000 OR +44 20 8743 8000"
+    assert '"' not in bing_query
+    # Google and DuckDuckGo handle quoted phrases, so they keep every format.
+    google_query = parse_qs(urlparse(hits["Google web"].url or "").query)["q"][0]
+    assert '"+442087438000"' in google_query and '"00442087438000"' in google_query
