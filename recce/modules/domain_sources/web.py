@@ -120,7 +120,8 @@ class _HomepageParser(HTMLParser):
         if tag == "a" and attr.get("href"):
             link = attr["href"]
             if re.search(
-                r"(linkedin\.com/company/|twitter\.com/|x\.com/|facebook\.com/|instagram\.com/|youtube\.com/|github\.com/)",
+                r"(linkedin\.com/(company|in)/|twitter\.com/|//(www\.)?x\.com/|facebook\.com/|instagram\.com/|"
+                r"youtube\.com/|github\.com/|tiktok\.com/@|threads\.net/@|bsky\.app/profile/|mastodon\.)",
                 link,
                 re.I,
             ):
@@ -144,17 +145,23 @@ def _detect_technologies(html: str, headers: Any, meta: dict[str, str]) -> list[
         ("Drupal", "drupal" in generator or "/sites/default/" in text),
         ("Shopify", "cdn.shopify.com" in text or "shopify" in header_text),
         ("Wix", "wixstatic.com" in text),
-        ("Squarespace", "squarespace" in text),
-        ("Webflow", "webflow" in text),
-        ("HubSpot", "hs-scripts.com" in text or "hubspot" in text),
+        ("Squarespace", "static1.squarespace.com" in text or "squarespace" in generator),
+        ("Webflow", "assets.website-files.com" in text or "data-wf-site" in text or "webflow" in generator),
+        ("HubSpot", "hs-scripts.com" in text or "js.hs-analytics.net" in text or "hubspot" in header_text),
         ("Cloudflare", "cloudflare" in header_text),
         ("AWS CloudFront", "cloudfront" in header_text),
         ("Fastly", "fastly" in header_text),
         ("Google Analytics", "google-analytics.com" in text or "gtag/js" in text),
         ("Google Tag Manager", "googletagmanager.com" in text),
-        ("React", "react" in text),
-        ("Next.js", "__next" in text),
-        ("Vue", "vue" in text),
+        # Framework checks need markers the framework itself emits: plain
+        # substrings like "react"/"vue" matched ordinary words ("reaction",
+        # "revue") and flagged most sites.
+        ("React", bool(re.search(r"data-reactroot|react-dom(\.production)?(\.min)?\.js|__react|_reactlistening", text))),
+        ("Next.js", "__next_data__" in text or "/_next/static/" in text),
+        ("Nuxt", "__nuxt" in text or "/_nuxt/" in text),
+        ("Vue", bool(re.search(r"\bdata-v-[0-9a-f]{6,8}\b|vue(\.runtime)?(\.global)?(\.prod)?(\.min)?\.js|__vue_app__", text))),
+        ("Angular", bool(re.search(r"\bng-version=|\b_ngcontent-", text))),
+        ("Svelte", bool(re.search(r"\bsvelte-[a-z0-9]{5,8}\b|/_app/immutable/", text))),
     ]
     return [name for name, ok in checks if ok]
 
