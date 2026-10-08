@@ -51,8 +51,13 @@ open.
 cross-links, shared email, avatar dHash, display name and location, and
 clusters them (`Report.clusters`, `extra.attribution` per hit) with an
 account-creation timeline. Site hits get name/avatar/links from their
-pages' meta tags (`recce/modules/page_meta.py`). Open: clusters across
-pivoted reports (one person, several handles) are not merged yet.
+pages' meta tags (`recce/modules/page_meta.py`). `merge_reports` runs the
+same comparison across a root search and its pivots (and across any runs in
+a case), so one person known by several handles or emails shows as one
+*identity*: CLI "Linked across searches" panel, dossier and Markdown/PDF
+exports. Avatars compare by the hash stored on each hit, so it needs no
+network. Open: a pivot's own origin (the hit that named the next handle) is
+not yet a link signal; only corroborating profile data is.
 
 ### 4. Site definition health
 - Shipped: `recce selftest` probes each definition with a `known` account

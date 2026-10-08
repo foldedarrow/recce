@@ -255,6 +255,31 @@ def render_pivot_chain(run) -> None:  # type: ignore[no-untyped-def]
     console.print(Panel(root, title="[bold cyan]Pivot chain[/]", border_style="cyan"))
 
 
+def render_identities(reports: list[Report]) -> None:
+    """Identities that span several searches (one person, several handles/emails)."""
+    from ..modules.attribution import merge_reports
+
+    identities = merge_reports(reports)
+    if not identities:
+        return
+    parts: list[Text] = []
+    for cluster in identities:
+        head = Text()
+        head.append(f"Identity {cluster.id}", style="bold")
+        head.append(
+            f"  {len(cluster.members)} accounts · confidence {cluster.confidence:.2f}", style="green"
+        )
+        parts.append(head)
+        parts.append(Text("  " + ", ".join(m.source for m in cluster.members), style="cyan"))
+        for signal in cluster.signals[:8]:
+            parts.append(Text(f"    {signal}", style="dim"))
+        if len(cluster.signals) > 8:
+            parts.append(Text(f"    +{len(cluster.signals) - 8} more links", style="dim"))
+    console.print(
+        Panel(Group(*parts), title="[bold cyan]Linked across searches[/]", border_style="cyan")
+    )
+
+
 def render_clusters(report: Report) -> None:
     """Which FOUND hits look like the same person, and why."""
     from ..modules.attribution import cluster_attribution, uncorroborated_accounts

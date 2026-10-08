@@ -18,6 +18,11 @@ other signals are grouped into clusters ("these 5 profiles look like the same
 person"); a cluster always spans at least two accounts. Account-creation dates order each cluster into a timeline. Hits
 with no corroboration match on the username alone.
 
+`merge_reports` runs the same comparison across several reports (a root search
+and the pivots it led to), so one person known by several handles or emails
+comes out as one identity. It makes no network requests: avatars are compared
+by the hash `attribute` stored on each hit.
+
 Avatar fetching is the only network access: one GET per avatar image, which
 the site already serves publicly. Nothing here contacts the subject.
 """
@@ -28,6 +33,7 @@ import asyncio
 import io
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
@@ -79,6 +85,7 @@ class _Node:
     avatar_url: str | None = None
     avatar_hash: int | None = None
     created_at: str | None = None
+    query: str = ""
 
 
 async def attribute(report: Report, client: Any = None, *, fetch_avatars: bool = True) -> list[Cluster]:
@@ -101,9 +108,33 @@ async def attribute(report: Report, client: Any = None, *, fetch_avatars: bool =
             if signals and _combine(signals) >= LINK_THRESHOLD:
                 edges[(a.index, b.index)] = signals
 
-    clusters = _clusters(nodes, edges, report)
+    clusters = _clusters(nodes, edges)
     report.clusters = clusters
     return clusters
+
+
+def merge_reports(reports: Sequence[Report]) -> list[Cluster]:
+    """Identities that span two or more of `reports`.
+
+    Compares every FOUND hit with every other, across reports, and groups
+    accounts the same way `attribute` does. A search for one handle that finds
+    a profile linking to another handle, or an email shown on a profile, puts
+    both searches' accounts in one cluster. Only clusters touching at least two
+    different searches are returned (within one report, `report.clusters`
+    already has them), and nothing on the reports is changed.
+    """
+    nodes: list[_Node] = []
+    for report in reports:
+        for hit in report.hits:
+            if hit.is_found and hit.category != "archive":
+                nodes.append(_node(len(nodes), hit, report.query))
+    edges: dict[tuple[int, int], list[str]] = {}
+    for a_pos, a in enumerate(nodes):
+        for b in nodes[a_pos + 1:]:
+            signals = _signals(a, b)
+            if signals and _combine(signals) >= LINK_THRESHOLD:
+                edges[(a.index, b.index)] = signals
+    return _clusters(nodes, edges, cross=True)
 
 
 # --- per-hit features ---------------------------------------------------------
@@ -111,7 +142,7 @@ async def attribute(report: Report, client: Any = None, *, fetch_avatars: bool =
 
 def _node(index: int, hit: Hit, query: str) -> _Node:
     extra = hit.extra or {}
-    node = _Node(index=index, hit=hit, key=url_key(hit.url))
+    node = _Node(index=index, hit=hit, key=url_key(hit.url), query=query)
     if not any(k in extra for k in _PROFILE_KEYS):
         return node  # a bare site probe: only its URL can corroborate
     node.name = _norm_name(extra.get("name"), query)
@@ -125,6 +156,12 @@ def _node(index: int, hit: Hit, query: str) -> _Node:
     avatar = extra.get("avatar_url")
     if isinstance(avatar, str) and avatar.startswith("http") and not _is_default_avatar(avatar):
         node.avatar_url = avatar
+    stored = extra.get("avatar_hash")
+    if node.avatar_url and isinstance(stored, str):
+        try:
+            node.avatar_hash = int(stored, 16)
+        except ValueError:
+            pass
     created = extra.get("created_at")
     node.created_at = created if isinstance(created, str) and created else None
     return node
@@ -189,7 +226,7 @@ def _is_default_avatar(url: str) -> bool:
 
 
 async def _hash_avatars(nodes: list[_Node], client: Any) -> None:
-    wanted = [n for n in nodes if n.avatar_url][:MAX_AVATARS]
+    wanted = [n for n in nodes if n.avatar_url and n.avatar_hash is None][:MAX_AVATARS]
     by_url: dict[str, int | None] = {}
 
     async def fetch(url: str) -> None:
@@ -203,6 +240,9 @@ async def _hash_avatars(nodes: list[_Node], client: Any) -> None:
     await asyncio.gather(*(fetch(url) for url in {n.avatar_url for n in wanted if n.avatar_url}))
     for node in wanted:
         node.avatar_hash = by_url.get(node.avatar_url or "")
+        if node.avatar_hash is not None:
+            # Kept so merge_reports can compare avatars later without fetching.
+            node.hit.extra["avatar_hash"] = f"{node.avatar_hash:016x}"
 
 
 def avatar_hash(data: bytes) -> int | None:
@@ -288,13 +328,17 @@ def _combine(signals: list[str]) -> float:
 
 
 def _clusters(
-    nodes: list[_Node], edges: dict[tuple[int, int], list[str]], report: Report
+    nodes: list[_Node], edges: dict[tuple[int, int], list[str]], *, cross: bool = False
 ) -> list[Cluster]:
     """Group linked hits into accounts, then accounts into clusters.
 
     Hits for one profile URL (a site probe, its profile API, commit identities)
     are one *account*: that confirms existence, not attribution. A cluster
     needs at least two distinct accounts linked by corroborating signals.
+
+    With `cross`, nodes come from several reports: sources are labelled with
+    their search, only clusters spanning two searches are kept, and the hits
+    are left unannotated.
     """
     by_index = {n.index: n for n in nodes}
     account_of: dict[int, int] = {}
@@ -326,13 +370,19 @@ def _clusters(
     for node in nodes:
         accounts.setdefault(account_of[node.index], []).append(node)
 
+    def queries(acc: int) -> str:
+        return ", ".join(dict.fromkeys(n.query for n in accounts[acc]))
+
     def label(acc: int) -> str:
-        return " + ".join(dict.fromkeys(n.hit.source for n in accounts[acc]))
+        sources = " + ".join(dict.fromkeys(n.hit.source for n in accounts[acc]))
+        return f"{sources} [{queries(acc)}]" if cross else sources
 
     groups: dict[int, list[int]] = {}
     for acc in sorted(accounts):
         groups.setdefault(find(acc), []).append(acc)
     multi = sorted((g for g in groups.values() if len(g) > 1), key=lambda g: (-len(g), g[0]))
+    if cross:
+        multi = [g for g in multi if len({n.query for a in g for n in accounts[a]}) > 1]
 
     clusters: list[Cluster] = []
     for cid, group in enumerate(multi, start=1):
@@ -357,7 +407,7 @@ def _clusters(
 
         timeline = sorted((acc for acc in group if created(acc)), key=lambda acc: created(acc) or "")
         for acc in group:
-            for node in accounts[acc]:
+            for node in () if cross else accounts[acc]:
                 node.hit.extra["attribution"] = {
                     "cluster": cid,
                     "confidence": account_scores.get(acc, 0.0),
@@ -367,16 +417,24 @@ def _clusters(
             Cluster(
                 id=cid,
                 confidence=round(sum(account_scores.get(a, 0.0) for a in group) / len(group), 2),
-                members=[ClusterMember(source=label(a), url=by_index[a].hit.url) for a in group],
+                members=[
+                    ClusterMember(source=label(a), url=by_index[a].hit.url, query=queries(a) if cross else None)
+                    for a in group
+                ],
                 signals=cluster_signals,
                 timeline=[
-                    ClusterMember(source=label(a), url=by_index[a].hit.url, created_at=created(a))
+                    ClusterMember(
+                        source=label(a),
+                        url=by_index[a].hit.url,
+                        created_at=created(a),
+                        query=queries(a) if cross else None,
+                    )
                     for a in timeline
                 ],
             )
         )
 
-    for node in nodes:
+    for node in () if cross else nodes:
         if "attribution" not in node.hit.extra:
             node.hit.extra["attribution"] = {
                 "cluster": None,
@@ -384,6 +442,19 @@ def _clusters(
                 "signals": ["username match only"],
             }
     return clusters
+
+
+def merged_identities(runs: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`merge_reports` over saved investigation runs (each holds a report dict)."""
+    reports = []
+    for run in runs:
+        try:
+            reports.append(Report.model_validate(run["report"]))
+        except Exception:
+            continue  # a run saved by a very old version: skip, don't fail the export
+    if len(reports) < 2:
+        return []
+    return [c.model_dump(mode="json") for c in merge_reports(reports)]
 
 
 def cluster_attribution(extra: dict[str, Any]) -> dict[str, Any] | None:

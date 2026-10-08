@@ -25,6 +25,7 @@ from .core.output import (
     export_json,
     render_clusters,
     render_domain_summary_card,
+    render_identities,
     render_pivot_chain,
     render_pivot_suggestions,
     render_report,
@@ -1205,6 +1206,7 @@ def _render_and_pivot(
             render(child)
             out.append(child)
         render_pivot_chain(run)
+        render_identities([root, *run.reports])
     return out
 
 

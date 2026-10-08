@@ -31,6 +31,7 @@ def render_dossier(payload: dict[str, Any], *, audit_status: tuple[bool, str] | 
         _summary(runs, chain, found_by_run),
         _graph_section(runs, chain, found_by_run),
         _clusters_section(runs),
+        _identities_section(runs),
         _timeline_section(runs, found_by_run),
         _findings_section(runs, found_by_run),
         _methodology(runs, payload, audit_status),
@@ -195,6 +196,32 @@ def _clusters_section(runs: list[dict]) -> str:
     else:
         body = "".join(blocks)
     return _section("Likely the same person", body)
+
+
+def _identities_section(runs: list[dict]) -> str:
+    from ..modules.attribution import merged_identities
+
+    identities = merged_identities(runs)
+    if not identities:
+        return ""
+    blocks = []
+    for cluster in identities:
+        members = "".join(
+            f"<li>{_link(m.get('url'), m.get('source'))}</li>" for m in cluster.get("members", [])
+        )
+        signals = "".join(f"<li>{escape(s)}</li>" for s in cluster.get("signals", []))
+        blocks.append(
+            "<article class=\"cluster\">"
+            f"<h3>Identity {cluster.get('id')} "
+            f"<span class=\"badge\">confidence {float(cluster.get('confidence') or 0):.2f}</span></h3>"
+            f"<div class=\"two\"><div><h4>Accounts (search in brackets)</h4><ul>{members}</ul></div>"
+            f"<div><h4>Why they're linked</h4><ul>{signals}</ul></div></div></article>"
+        )
+    note = (
+        "<p class=\"muted\">Accounts from different searches in this case that public profile data "
+        "links to each other, so the handles or emails searched probably belong to one person.</p>"
+    )
+    return _section("Linked across searches", note + "".join(blocks))
 
 
 def _timeline_section(runs: list[dict], found_by_run: dict[str, list[dict]]) -> str:
