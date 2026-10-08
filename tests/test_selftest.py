@@ -96,6 +96,24 @@ async def test_challenge_page_with_http_200_is_not_a_hit() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fastly_client_challenge_with_http_200_is_blocked() -> None:
+    # Last.fm serves this to some egress IPs (Proton) for every username.
+    body = (
+        '<html><head><link href="/_fs-ch-1T1wmsGaOgGaSxcX/assets/styles.css" rel="stylesheet" />'
+        "<title>Client Challenge</title></head>"
+    )
+    client = FakeClient({}, default=200)
+    client.pages["https://example.test/alice"] = (200, body)
+    client.pages["https://example.test/qcanary"] = (200, body)
+
+    hit = await _check_site(client, SITE, "alice")
+    canary = await _check_site(client, SITE, "qcanary")
+
+    assert hit.extra["challenge"] == "Fastly challenge"
+    assert selftest.classify(hit, canary)[0] == selftest.BLOCKED
+
+
+@pytest.mark.asyncio
 async def test_run_selftest_records_egress_and_summary() -> None:
     client = FakeClient({
         "https://ipinfo.io/json": (200, json.dumps({"ip": "203.0.113.9", "country": "NL", "org": "AS1 VPN"})),
