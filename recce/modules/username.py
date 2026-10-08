@@ -47,7 +47,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-from ..core.http import HttpClient
+from ..core.http import HttpClient, ImpersonatingClient, impersonation_available
 from ..core.output import console
 from ..core.result import Hit, Report, Status
 
@@ -514,6 +514,41 @@ async def search_username(
     per_domain_rate: float = DEFAULT_PER_DOMAIN_RATE,
     guarded_backoff_seconds: float = DEFAULT_GUARDED_BACKOFF_SECONDS,
     verify_found: bool = True,
+    impersonate: bool = True,
+) -> Report:
+    """Probe every site for `username`.
+
+    With `impersonate` (default) and curl_cffi installed, probes go out with a
+    real Chrome fingerprint, which gets past far more bot walls than httpx.
+    """
+    if impersonate and impersonation_available():
+        browser = ImpersonatingClient.from_client(client)
+        try:
+            return await _search_username(
+                username, browser, only_categories=only_categories, exclude_categories=exclude_categories,
+                include_nsfw=include_nsfw, show_progress=show_progress, per_domain_rate=per_domain_rate,
+                guarded_backoff_seconds=guarded_backoff_seconds, verify_found=verify_found,
+            )
+        finally:
+            await browser.aclose()
+    return await _search_username(
+        username, client, only_categories=only_categories, exclude_categories=exclude_categories,
+        include_nsfw=include_nsfw, show_progress=show_progress, per_domain_rate=per_domain_rate,
+        guarded_backoff_seconds=guarded_backoff_seconds, verify_found=verify_found,
+    )
+
+
+async def _search_username(
+    username: str,
+    client: Any,
+    *,
+    only_categories: set[str] | None,
+    exclude_categories: set[str] | None,
+    include_nsfw: bool,
+    show_progress: bool,
+    per_domain_rate: float,
+    guarded_backoff_seconds: float,
+    verify_found: bool,
 ) -> Report:
     if not USERNAME_RE.match(username):
         raise ValueError(

@@ -27,6 +27,9 @@ class HttpClient:
     ) -> None:
         self._sem = asyncio.Semaphore(max_concurrency)
         self._retries = retries
+        self.timeout = timeout
+        self.max_concurrency = max_concurrency
+        self.proxy = proxy
         client_kwargs: dict[str, Any] = dict(
             timeout=httpx.Timeout(timeout, connect=min(timeout, 6.0)),
             headers={
@@ -119,6 +122,95 @@ class HttpClient:
         return await self.request("POST", url, **kw)
 
 
+class ImpersonatingClient:
+    """HTTP client that presents a real Chrome TLS/HTTP2 fingerprint via
+    curl_cffi. Many sites (Cloudflare, Akamai, DataDome) reject Python HTTP
+    stacks on fingerprint alone; live testing unblocked ~35% of username
+    probes that httpx got 403 on. Same interface as `HttpClient`.
+
+    Note this also sends Chrome's User-Agent, so it is used only where the
+    caller opts in (username probes by default, `--no-impersonate` to stop).
+    """
+
+    def __init__(
+        self,
+        timeout: float = 12.0,
+        max_concurrency: int = 30,
+        retries: int = 1,
+        proxy: str | None = None,
+        impersonate: str = "chrome",
+    ) -> None:
+        from curl_cffi.requests import AsyncSession
+
+        self._sem = asyncio.Semaphore(max_concurrency)
+        self._retries = retries
+        self._timeout = timeout
+        self._session = AsyncSession(impersonate=impersonate, proxy=proxy, timeout=timeout)
+
+    @classmethod
+    def from_client(cls, client: HttpClient) -> ImpersonatingClient:
+        return cls(timeout=client.timeout, max_concurrency=client.max_concurrency, proxy=client.proxy)
+
+    async def aclose(self) -> None:
+        await self._session.close()
+
+    async def request_detailed(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+        json: Any | None = None,
+        data: Any | None = None,
+        follow_redirects: bool = True,
+    ) -> tuple[Any, str | None]:
+        from curl_cffi.requests.exceptions import RequestException
+
+        last_exc: Exception | None = None
+        for attempt in range(self._retries + 1):
+            try:
+                async with self._sem:
+                    resp = await self._session.request(
+                        method,
+                        url,
+                        headers=headers,
+                        params=params,
+                        json=json,
+                        data=data,
+                        allow_redirects=follow_redirects,
+                    )
+                return resp, None
+            except RequestException as e:
+                last_exc = e
+                if attempt < self._retries:
+                    await asyncio.sleep(0.4 * (attempt + 1))
+                    continue
+                log.debug("HTTP %s %s failed after retries: %s", method, url, e)
+        return None, describe_transport_error(last_exc) if last_exc else "network error"
+
+    async def request(self, method: str, url: str, **kw: Any) -> Any:
+        resp, _ = await self.request_detailed(method, url, **kw)
+        return resp
+
+    async def get(self, url: str, **kw: Any) -> Any:
+        return await self.request("GET", url, **kw)
+
+    async def head(self, url: str, **kw: Any) -> Any:
+        return await self.request("HEAD", url, **kw)
+
+    async def post(self, url: str, **kw: Any) -> Any:
+        return await self.request("POST", url, **kw)
+
+
+def impersonation_available() -> bool:
+    try:
+        import curl_cffi  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 _DNS_ERROR_MARKERS = (
     "name or service not known",
     "nodename nor servname",
@@ -128,13 +220,14 @@ _DNS_ERROR_MARKERS = (
     "[errno -2]",
     "[errno -3]",
     "[errno 8]",
+    "could not resolve host",
 )
 
 
 def describe_transport_error(exc: BaseException) -> str:
     """Turn an httpx exception into a short, user-facing failure reason."""
     text = str(exc).lower()
-    if isinstance(exc, httpx.TimeoutException):
+    if isinstance(exc, httpx.TimeoutException) or "timed out" in text or "timeout" in type(exc).__name__.lower():
         return "timeout"
     if any(marker in text for marker in _DNS_ERROR_MARKERS):
         return "DNS lookup failed (blocked by local resolver, or domain gone)"
