@@ -52,6 +52,7 @@ from ..core.egress import Exit, exit_label
 from ..core.http import HttpClient, ImpersonatingClient, impersonation_available
 from ..core.output import console
 from ..core.result import Hit, Report, Status
+from .page_meta import apply_page_meta, extract_page_meta
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,38}$")
 NSFW_CAT_RE = re.compile(r"\bnsfw\b", re.IGNORECASE)
@@ -388,7 +389,10 @@ async def _check_site(
     username: str,
     *,
     throttle: PerDomainThrottle | None = None,
+    collect_meta: bool = False,
 ) -> Hit:
+    """Probe one site. FOUND hits (and every probe with `collect_meta`) keep
+    the page's meta tags in `extra["page_meta"]` for `apply_page_meta`."""
     if site.get("strip_bad_char"):
         for ch in site["strip_bad_char"]:
             username = username.replace(ch, "")
@@ -434,7 +438,7 @@ async def _check_site(
             elapsed_ms=elapsed_ms,
         )
 
-    needs_body = method not in ("status", "redirect_match") or resp.status_code in (
+    needs_body = collect_meta or method not in ("status", "redirect_match") or resp.status_code in (
         200, 202, 403, 429, 503,
     )
     body = (resp.text or "") if needs_body else ""
@@ -456,6 +460,10 @@ async def _check_site(
         extra["location"] = location
     if challenge:
         extra["challenge"] = challenge
+    if body and (status is Status.FOUND or collect_meta):
+        page_meta = extract_page_meta(body, str(resp.url))
+        if page_meta:
+            extra["page_meta"] = page_meta
     confidence = {
         Status.FOUND: 0.85,
         Status.NOT_FOUND: 0.9,
@@ -497,6 +505,7 @@ async def _verify_found(
     hits: list[Hit],
     throttle: PerDomainThrottle | None,
     exit_clients: dict[str, Any] | None = None,
+    username: str = "",
 ) -> None:
     """Re-probe every FOUND site with a made-up username. A site that also
     "finds" the made-up account reports existence for any input, so the hit
@@ -510,12 +519,17 @@ async def _verify_found(
 
     async def check(hit: Hit) -> None:
         via = exit_clients.get(hit.extra.get("exit", ""), client)
-        probe = await _check_site(via, sites_by_name[hit.source], canary, throttle=throttle)
+        probe = await _check_site(
+            via, sites_by_name[hit.source], canary, throttle=throttle, collect_meta=True
+        )
         hit.extra["canary"] = {"username": canary, "status": probe.status.value}
         if probe.status is Status.FOUND:
             hit.status = Status.UNKNOWN
             hit.summary = "unverifiable — site also reports a made-up username as existing"
             hit.confidence = 0.2
+        elif username:
+            # Whatever the canary's page shares with this one is site boilerplate.
+            apply_page_meta(hit, username, probe.extra.get("page_meta"))
 
     await asyncio.gather(*(check(hit) for hit in found))
 
@@ -722,7 +736,14 @@ async def _search_username(
             await _retry_blocked(fallback_client, label, sites_by_name, results, username, throttle)
             verify_clients[label] = fallback_client
         if verify_found:
-            await _verify_found(client, sites_by_name, results, throttle, verify_clients)
+            await _verify_found(
+                client, sites_by_name, results, throttle, verify_clients, username=username
+            )
+        for hit in results:
+            if hit.status is Status.FOUND:
+                apply_page_meta(hit, username)  # no-op if verification already did
+            else:
+                hit.extra.pop("page_meta", None)
         for hit in results:
             if hit.source in flags:
                 selftest.annotate_hit(hit, flags[hit.source])

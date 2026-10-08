@@ -56,6 +56,9 @@ _PROFILE_KEYS = ("avatar_url", "created_at", "bio", "location", "links", "blog")
 _DEFAULT_AVATAR_HINTS = (
     "default", "missing", "placeholder", "blank", "anonymous", "no_avatar", "noavatar",
     "fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb",  # Steam's default avatar
+    # Site-wide share images that page meta tags often carry instead of an avatar.
+    "fallback", "opengraph", "open-graph", "og_image", "og-image", "logo", "banner",
+    "favicon", "apple-touch-icon", "twshare", "sharing", "zaslepka",
 )
 _VAGUE_LOCATIONS = {
     "earth", "internet", "the internet", "online", "remote", "worldwide", "global",
@@ -161,8 +164,11 @@ def _norm_name(value: Any, query: str) -> str | None:
     name = _norm_text(value)
     if not name:
         return None
-    # A display name that is just the handle is a site default, not evidence.
-    if name.replace(" ", "") == re.sub(r"[^\w]", "", query.casefold()):
+    # A display name built from the handle ("sample's profile", "Profil
+    # użytkownika sample") is a site template, and tells us nothing the
+    # username didn't: only names without the handle count.
+    handle = re.sub(r"[^\w]", "", query.casefold())
+    if handle and (handle in name.split() or name.replace(" ", "") == handle):
         return None
     return name
 
@@ -239,6 +245,10 @@ def _signals(a: _Node, b: _Node) -> list[str]:
         out.append("cross-link")
     if a.emails & b.emails:
         out.append("shared email")
+    if _same_site(a, b):
+        # Two definitions of one site (e.g. "Genius (Artist)" / "Genius (User)")
+        # share its templates and default images: not independent evidence.
+        return out
     if a.avatar_hash is not None and b.avatar_hash is not None:
         if _hamming(a.avatar_hash, b.avatar_hash) <= AVATAR_MAX_DISTANCE:
             out.append("same avatar")
@@ -247,6 +257,12 @@ def _signals(a: _Node, b: _Node) -> list[str]:
     if a.location and b.location and _locations_match(a.location, b.location):
         out.append("same location")
     return out
+
+
+def _same_site(a: _Node, b: _Node) -> bool:
+    if not (a.key and b.key):
+        return False
+    return ".".join(a.key[0].split(".")[-2:]) == ".".join(b.key[0].split(".")[-2:])
 
 
 def _names_match(a: str, b: str) -> bool:

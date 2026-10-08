@@ -102,7 +102,12 @@ public data corroborates each other into **Likely the same person** clusters:
 | Same location (vague ones like "Earth" ignored) | 0.15 |
 
 Signals combine as `1 − Π(1 − w)`; two hits link at ≥ 0.40, so location or a
-one-word name alone never links. Each cluster lists the links that formed it
+one-word name alone never links. Plain site hits get their name, avatar and
+`rel="me"` links from the profile page's meta tags (OpenGraph/Twitter card).
+Anything the made-up-username page shares with it (a site-wide title or
+logo) is dropped. Names that contain the handle ("sample's profile") are
+site templates and don't count, and two definitions of the same site never
+corroborate each other. Each cluster lists the links that formed it
 and a timeline of account-creation dates. Hits outside every cluster are
 marked "username only". The only extra network traffic is one GET per public
 avatar image. Clusters are saved in reports, investigations and exports.

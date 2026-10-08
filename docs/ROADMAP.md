@@ -50,9 +50,8 @@ open.
 `recce/modules/attribution.py` links FOUND hits pairwise on same profile,
 cross-links, shared email, avatar dHash, display name and location, and
 clusters them (`Report.clusters`, `extra.attribution` per hit) with an
-account-creation timeline. Open: bare site probes (no profile API) can only
-join through URL/cross-links. Scraping names/avatars from their HTML (or
-OpenGraph tags) would let far more of them corroborate. Clusters across
+account-creation timeline. Site hits get name/avatar/links from their
+pages' meta tags (`recce/modules/page_meta.py`). Open: clusters across
 pivoted reports (one person, several handles) are not merged yet.
 
 ### 4. Site definition health
