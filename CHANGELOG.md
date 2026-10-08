@@ -9,6 +9,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Cross-report attribution.** Accounts from different searches (a root and its
+  pivots, or all runs in a case) that profile data links — cross-links, shared
+  email, same avatar, same display name — are grouped as one *identity*: a
+  "Linked across searches" panel after `--recursive`, a dossier section, and
+  Markdown/PDF export sections. Avatar hashes are now stored on hits so the
+  comparison needs no network.
 - Deep email mode checks whether an address is a **Microsoft account** (any
   domain) via the consumer sign-in page's username step, reporting personal vs
   work/school and the sign-in methods (password, phone, Authenticator, security

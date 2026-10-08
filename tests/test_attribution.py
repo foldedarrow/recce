@@ -314,3 +314,91 @@ def test_non_dict_attribution_is_not_a_cluster_annotation() -> None:
     assert uncorroborated_accounts(report) == 0
     render_clusters(report)  # no clusters panel, and no crash
     assert "cluster" not in _finding_row(report.hits[0].model_dump(mode="json"))
+
+
+# --- cross-report merge --------------------------------------------------------
+
+
+def _search(query: str, *hits: Hit, qtype: str = "username") -> Report:
+    return Report(query=query, query_type=qtype, hits=list(hits))
+
+
+def test_merge_links_handles_through_a_profile_cross_link() -> None:
+    from recce.modules.attribution import merge_reports
+
+    a = _search(
+        "alice",
+        _profile("GitHub", "https://github.com/alice", links=["https://x.com/alicia_dev"]),
+    )
+    b = _search("alicia_dev", _profile("X", "https://x.com/alicia_dev"))
+    identities = merge_reports([a, b])
+    assert len(identities) == 1
+    cluster = identities[0]
+    assert {m.query for m in cluster.members} == {"alice", "alicia_dev"}
+    assert any("cross-link" in s for s in cluster.signals)
+    # Nothing is written back to the reports.
+    assert not a.clusters and "attribution" not in a.hits[0].extra
+
+
+def test_merge_links_email_and_username_reports_on_a_shared_email() -> None:
+    from recce.modules.attribution import merge_reports
+
+    user = _search("alice", _profile("GitHub", "https://github.com/alice", emails=["a@example.org"]))
+    email = _search(
+        "a@example.org",
+        _profile("GitLab", "https://gitlab.com/alice2", emails=["a@example.org"]),
+        qtype="email",
+    )
+    identities = merge_reports([user, email])
+    assert len(identities) == 1
+    assert any("shared email" in s for s in identities[0].signals)
+
+
+def test_merge_ignores_unrelated_searches_and_in_report_clusters() -> None:
+    from recce.modules.attribution import merge_reports
+
+    a = _search("alice", _site("Reddit", "https://reddit.com/user/alice"))
+    b = _search("bob", _site("Reddit", "https://reddit.com/user/bob"))
+    assert merge_reports([a, b]) == []
+    # Two linked accounts inside ONE report are that report's own cluster, not an identity.
+    one = _search(
+        "alice",
+        _profile("GitHub", "https://github.com/alice", links=["https://x.com/alice"]),
+        _profile("X", "https://x.com/alice"),
+    )
+    assert merge_reports([one, b]) == []
+
+
+def test_merge_counts_the_same_account_found_by_two_searches_once() -> None:
+    from recce.modules.attribution import merge_reports
+
+    a = _search("alice", _profile("GitHub", "https://github.com/alice"))
+    b = _search("alice2", _profile("GitHub", "https://github.com/alice"))
+    assert merge_reports([a, b]) == []
+
+
+@pytest.mark.asyncio
+async def test_merge_uses_stored_avatar_hash_without_network() -> None:
+    from recce.modules.attribution import merge_reports
+
+    img = _image("circle")
+    a = _search("alice", _profile("GitHub", "https://github.com/alice", avatar_url="https://img/a.png"))
+    b = _search("zed", _profile("GitLab", "https://gitlab.com/zed", avatar_url="https://img/b.png"))
+    for r in (a, b):
+        await attribute(r, ImageClient({"https://img/a.png": img, "https://img/b.png": img}))
+    assert "avatar_hash" in a.hits[0].extra
+    identities = merge_reports([a, b])
+    assert len(identities) == 1 and any("same avatar" in s for s in identities[0].signals)
+
+
+def test_dossier_lists_identities_across_searches() -> None:
+    from recce.core.dossier import _identities_section
+    from recce.modules.attribution import merged_identities
+
+    a = _search("alice", _profile("GitHub", "https://github.com/alice", links=["https://x.com/alicia_dev"]))
+    b = _search("alicia_dev", _profile("X", "https://x.com/alicia_dev"))
+    runs = [{"report": r.model_dump(mode="json")} for r in (a, b)]
+    assert len(merged_identities(runs)) == 1
+    html = _identities_section(runs)
+    assert "Linked across searches" in html and "alicia_dev" in html
+    assert _identities_section(runs[:1]) == ""

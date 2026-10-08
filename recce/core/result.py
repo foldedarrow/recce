@@ -51,6 +51,7 @@ class ClusterMember(BaseModel):
     source: str
     url: str | None = None
     created_at: str | None = None
+    query: str | None = None  # the search(es) that found it; set on cross-report identities
 
 
 class Cluster(BaseModel):

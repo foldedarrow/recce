@@ -573,6 +573,13 @@ class InvestigationStore:
                         )
                     )
                 lines.append("")
+        from ..modules.attribution import merged_identities
+
+        identities = merged_identities(runs)
+        if identities:
+            lines.extend(["## Linked Across Searches", ""])
+            for cluster in identities:
+                lines.extend(_cluster_lines(cluster, label="Identity"))
         lines.extend(
             [
                 "## Methodology Note",
@@ -651,6 +658,17 @@ class InvestigationStore:
                     )
                 if len(confirmed) > 12:
                     pdf.text(f"+{len(confirmed) - 12} additional confirmed finding(s) in JSON evidence.")
+
+        from ..modules.attribution import merged_identities
+
+        identities = merged_identities(runs)
+        if identities:
+            pdf.heading("Linked Across Searches", level=2)
+            for cluster in identities:
+                head, *rest = [line for line in _cluster_lines(cluster, label="Identity") if line]
+                pdf.text(head.replace("**", ""))
+                for line in rest:
+                    pdf.bullet(line.removeprefix("- "))
 
         pdf.heading("Evidence Appendix", level=2)
         for run in runs:
@@ -789,11 +807,11 @@ def pivot_edge(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _cluster_lines(cluster: dict[str, Any]) -> list[str]:
+def _cluster_lines(cluster: dict[str, Any], *, label: str = "Likely the same person") -> list[str]:
     """Markdown lines for one attribution cluster."""
     members = ", ".join(m.get("source") or "-" for m in cluster.get("members", []))
     lines = [
-        f"**Likely the same person (cluster {cluster.get('id')}, "
+        f"**{label} ({'identity' if label == 'Identity' else 'cluster'} {cluster.get('id')}, "
         f"confidence {cluster.get('confidence', 0):.2f}):** {members}",
         "",
     ]
