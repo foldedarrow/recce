@@ -14,6 +14,9 @@ from .base import Provider, ProviderContext
 
 API_BASE = "https://api.platform.censys.io/v3/global/asset"
 MAX_HOSTS = 4
+# The free tier allows a single in-flight request, so lookups run one at a time
+# and a 429 gets one short back-off retry.
+RATE_LIMIT_RETRY_DELAY = 1.5
 
 
 class CensysProvider(Provider):
@@ -45,9 +48,8 @@ class CensysProvider(Provider):
         if ctx.settings.censys_org_id:
             headers["X-Organization-ID"] = ctx.settings.censys_org_id
 
-        lookups = [self._host(ip, headers, ctx) for ip in ips[:MAX_HOSTS]]
-        lookups.append(self._web_property(target, headers, ctx))
-        hits = list(await asyncio.gather(*lookups))
+        hits = [await self._host(ip, headers, ctx) for ip in ips[:MAX_HOSTS]]
+        hits.append(await self._web_property(target, headers, ctx))
         if not ips:
             hits.insert(
                 0,
@@ -144,6 +146,9 @@ class CensysProvider(Provider):
     ) -> tuple[dict[str, Any], Hit | None]:
         started = time.perf_counter()
         resp = await ctx.client.get(url, headers=headers)
+        if resp is not None and resp.status_code == 429:
+            await asyncio.sleep(RATE_LIMIT_RETRY_DELAY)
+            resp = await ctx.client.get(url, headers=headers)
         elapsed = int((time.perf_counter() - started) * 1000)
         if resp is None:
             return {}, self._error("network", elapsed)
@@ -152,6 +157,8 @@ class CensysProvider(Provider):
         if resp.status_code in {403, 422}:
             detail = _error_detail(resp)
             return {}, self._error(detail or f"HTTP {resp.status_code}", elapsed)
+        if resp.status_code == 429:
+            return {}, self._error("rate-limited by Censys (free tier allows one request at a time)", elapsed)
         if resp.status_code == 404:
             return {}, Hit(
                 source=self.name,

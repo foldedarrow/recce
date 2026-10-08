@@ -680,3 +680,28 @@ def test_censys_provider_needs_token_only(monkeypatch) -> None:  # type: ignore[
     rows = {row["id"]: row for row in provider_status_rows(_settings(censys_api_token="censys_tok"))}
 
     assert rows["censys"]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_censys_provider_retries_once_on_rate_limit(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import recce.modules.domain_sources.common as common
+    import recce.providers.censys as censys
+
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-pro")
+    monkeypatch.setattr(common, "dns_lookup", _fake_dns({}))
+    monkeypatch.setattr(censys, "RATE_LIMIT_RETRY_DELAY", 0)
+    client = DummyClient(DummyResponse(429, {}))
+
+    hits = await query_registered_providers(
+        "example.com",
+        "domain",
+        client,  # type: ignore[arg-type]
+        _settings(censys_api_token="censys_tok"),
+        skip_provider_ids={"shodan"},
+    )
+
+    censys_hits = [hit for hit in hits if hit.source == "Censys"]
+    assert censys_hits[0].status is Status.NOT_FOUND  # no public IPs resolved
+    assert censys_hits[1].status is Status.ERROR
+    assert "rate-limited" in (censys_hits[1].error or "")
+    assert len(client.requests) == 2  # webproperty lookup + one retry
