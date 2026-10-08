@@ -9,6 +9,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Attribution clusters** for username searches: FOUND hits are linked by
+  corroborating public data (same profile, cross-links, shared email, avatar
+  perceptual hash, display name, location) and grouped into "likely the same
+  person" clusters with a confidence, the signals behind each link and an
+  account-creation timeline. Uncorroborated hits are marked "username only".
+  Shown in the CLI, the GUI (cluster section + column) and investigation
+  exports. Adds a `pillow` dependency for avatar hashing.
 - **`recce selftest`**: probes every username site definition with a known
   account and a made-up one and classifies it healthy / false-positive /
   false-negative / blocked / error / unverified, recording the egress IP
