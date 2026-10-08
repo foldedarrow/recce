@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Hudson Rock** infostealer lookups for emails and usernames (keyless): when
+  and where a machine holding the identifier's credentials was infected. The
+  partial passwords/logins the API returns are never stored or shown.
 - Passive subdomains add **Cert Spotter** (second CT source) and **urlscan.io**,
   both keyless. Live: 50 → 894 subdomains for a large domain while crt.sh 502'd.
 - **GitHub identity** (username provider): profile details (name, company,

@@ -22,7 +22,7 @@ def _isolate_pro_entitlement(tmp_path, monkeypatch):  # type: ignore[no-untyped-
 
 
 # Keyless email providers; tests targeting one specific provider skip these.
-OTHER_FREE_EMAIL = {"xposedornot", "leakcheck", "proton", "github-commits"}
+OTHER_FREE_EMAIL = {"xposedornot", "leakcheck", "proton", "github-commits", "hudsonrock"}
 
 
 def _settings(**overrides) -> Settings:  # type: ignore[no-untyped-def]

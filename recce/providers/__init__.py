@@ -15,6 +15,7 @@ from .emailrep import EmailRepProvider
 from .github_commits import GitHubCommitsProvider
 from .github_identity import GitHubIdentityProvider
 from .hibp import HIBPProvider
+from .hudsonrock import HudsonRockProvider
 from .hunter import HunterProvider
 from .leakcheck import LeakCheckProvider
 from .numverify import NumVerifyProvider
@@ -37,6 +38,7 @@ PROVIDERS: tuple[Provider, ...] = (
     HIBPProvider(),
     XposedOrNotProvider(),
     LeakCheckProvider(),
+    HudsonRockProvider(),
     ProtonKeyProvider(),
     GitHubCommitsProvider(),
     GitHubIdentityProvider(),
