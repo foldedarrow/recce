@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Censys provider is now live (Pro): for `recce domain` it looks up each public
+  A/AAAA address on the Censys Platform v3 API (ASN, country, exposed services)
+  and the TLS certificate served on `:443` (subject, issuer, expiry, SAN count).
 - Vonage Number Insight (Advanced) provider: a Pro-gated live **HLR** lookup for
   `recce phone` — current vs original carrier (number portability), ported
   status, reachability, and roaming. Keys: `VONAGE_API_KEY`, `VONAGE_API_SECRET`.
@@ -20,8 +23,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Phone search pivots now cover six number formats across Google, Bing and
   DuckDuckGo (previously two formats on Google only).
 
+### Changed
+
+- **Censys credentials renamed**: `CENSYS_API_ID` / `CENSYS_API_SECRET` (legacy
+  Search API) are replaced by `CENSYS_API_TOKEN` (Platform personal access
+  token) and an optional `CENSYS_ORG_ID` for paid plans. The old keys were never
+  used by a live query, so nothing else changes.
+
 ### Fixed
 
+- Shodan no longer reports a valid free-plan key as "invalid or unauthorized".
+  A 401 is reported as an invalid key; a 403 "requires membership" is a skipped
+  result explaining that the plan lacks DNS API access; other 403s surface
+  Shodan's own error text.
 - NumVerify now tries HTTPS first and transparently falls back to HTTP on the
   free tier's `https_access_restricted` (error 105), so free-tier keys return
   carrier data instead of an error.

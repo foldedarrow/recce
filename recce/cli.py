@@ -631,8 +631,8 @@ def cmd_doctor(
         "SHODAN_API_KEY": settings.shodan_api_key,
         "VIRUSTOTAL_API_KEY": settings.virustotal_api_key,
         "SECURITYTRAILS_API_KEY": settings.securitytrails_api_key,
-        "CENSYS_API_ID": settings.censys_api_id,
-        "CENSYS_API_SECRET": settings.censys_api_secret,
+        "CENSYS_API_TOKEN": settings.censys_api_token,
+        "CENSYS_ORG_ID": settings.censys_org_id,
     }
     for name, val in keys.items():
         marker = "[green]set[/]" if val else "[dim]unset[/]"

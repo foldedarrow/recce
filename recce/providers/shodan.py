@@ -45,13 +45,41 @@ class ShodanProvider(Provider):
                     extra={"provider_id": self.id},
                 )
             ]
-        if resp.status_code in {401, 403}:
+        if resp.status_code == 401:
             return [
                 Hit(
                     source=self.name,
                     category="subs",
                     status=Status.ERROR,
-                    error="invalid or unauthorized API key",
+                    error="invalid API key",
+                    elapsed_ms=elapsed,
+                    extra={"provider_id": self.id},
+                )
+            ]
+        if resp.status_code == 403:
+            # Shodan answers 403 both for plan limits and for revoked access;
+            # the free "oss" plan gets "Requires membership or higher to access"
+            # on /dns/domain even though the key itself is valid.
+            message = _error_message(resp)
+            if "membership" in message.lower():
+                return [
+                    Hit(
+                        source=self.name,
+                        category="subs",
+                        status=Status.SKIPPED,
+                        summary="key is valid, but the Shodan plan lacks DNS API access "
+                        "(needs a Membership or higher)",
+                        confidence=0.0,
+                        elapsed_ms=elapsed,
+                        extra={"provider_id": self.id, "shodan_error": message},
+                    )
+                ]
+            return [
+                Hit(
+                    source=self.name,
+                    category="subs",
+                    status=Status.ERROR,
+                    error=f"forbidden: {message}" if message else "forbidden (HTTP 403)",
                     elapsed_ms=elapsed,
                     extra={"provider_id": self.id},
                 )
@@ -125,3 +153,13 @@ class ShodanProvider(Provider):
                 elapsed_ms=elapsed,
             )
         ]
+
+
+def _error_message(resp: Any) -> str:
+    try:
+        data = resp.json()
+    except Exception:
+        return ""
+    if isinstance(data, dict):
+        return str(data.get("error") or "")[:160]
+    return ""

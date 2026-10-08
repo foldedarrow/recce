@@ -32,8 +32,6 @@ def _settings() -> Settings:
         shodan_api_key=None,
         virustotal_api_key=None,
         securitytrails_api_key=None,
-        censys_api_id=None,
-        censys_api_secret=None,
         user_agent="recce-test",
         timeout=3.0,
         max_concurrency=2,

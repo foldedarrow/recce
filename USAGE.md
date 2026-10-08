@@ -162,11 +162,11 @@ HUNTER_API_KEY=...      # Hunter.io email verification — free 25/mo
 NUMVERIFY_API_KEY=...   # Phone carrier lookup — free 100/mo
 EMAILREP_API_KEY=...    # EmailRep reputation — free / paid
 COMPANIES_HOUSE_KEY=... # Optional UK company lookup for recce domain
-SHODAN_API_KEY=...      # Pro-gated; query implementation planned
+SHODAN_API_KEY=...      # Pro-gated; DNS API needs a paid Shodan Membership
 VIRUSTOTAL_API_KEY=...  # Pro-gated; query implementation planned
 SECURITYTRAILS_API_KEY=...
-CENSYS_API_ID=...
-CENSYS_API_SECRET=...
+CENSYS_API_TOKEN=...    # Pro-gated; Censys Platform personal access token
+CENSYS_ORG_ID=...       # optional; paid Censys plans only
 ```
 
 Verify they loaded with `recce doctor`. You can also manage these in the GUI's
