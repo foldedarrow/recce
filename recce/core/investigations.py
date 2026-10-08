@@ -509,6 +509,13 @@ class InvestigationStore:
         payload = self.export_investigation(investigation_id, redacted=redacted)
         return json.dumps(payload, indent=2, default=str).encode()
 
+    def export_html(self, investigation_id: str, *, redacted: bool = False) -> str:
+        """Self-contained HTML dossier (see core/dossier.py)."""
+        from .dossier import render_dossier
+
+        payload = self.export_investigation(investigation_id, redacted=redacted)
+        return render_dossier(payload, audit_status=self.verify_audit_chain())
+
     def export_markdown(self, investigation_id: str, *, redacted: bool = False) -> str:
         payload = self.export_investigation(investigation_id, redacted=redacted)
         inv = payload["investigation"]

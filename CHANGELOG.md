@@ -9,6 +9,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **HTML dossier** for investigations (`recce investigations export <id>
+  --format html`, GUI "HTML dossier" buttons, full or redacted): one
+  self-contained page with a summary, an identity graph of the pivot chain
+  (inline SVG), likely-same-person clusters, a dated timeline (account
+  creation, first archive capture, breaches, infostealer infections,
+  searches), findings with "discovered via" provenance, attribution and
+  exits, and methodology with the audit-chain check. No scripts or external
+  assets; light/dark and print styles.
 - **Profile metadata from site pages**: FOUND username hits take name,
   avatar, bio and `rel="me"` links from the page's OpenGraph/Twitter/title
   tags (live: 108 of 214 hits for a large org handle), minus anything the
