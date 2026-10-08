@@ -158,6 +158,8 @@ recce phone "+447826916903" --deep --i-have-consent         # passive search-eng
 
 Output gives you carrier, region, type, plus clickable URLs for **WhatsApp**, **Google/Bing/DuckDuckGo web search** (across every number format), **Truecaller**, **Sync.me**.
 
+For +44 numbers (UK, Jersey, Guernsey, Isle of Man) an **Ofcom numbering** row gives the provider the number's block was originally allocated to, the block's status and allocation date, and the area for 01/02 numbers. It comes from a local index of Ofcom's published allocations, so no query leaves the machine. A ported number is now served by a different network, which is why the row says "originally allocated to". A block that is Free, Protected or Quarantined means the number shouldn't be in service: it was probably spoofed or mistyped.
+
 `--deep` adds a passive footprint: a comprehensive set of clickable **site: dorks** for socials, classifieds and paste sites (plus document and spam/reputation dorks), each spanning all common formats of the number, and one best-effort live DuckDuckGo query listing the public pages it surfaces. It only reads public search results — it never contacts the number — but it still profiles a person, so it requires `--i-have-consent`. Free search endpoints challenge automated quoted queries from server IPs, so the live query is best-effort and degrades to the dork links when rate-limited.
 
 ---
@@ -193,18 +195,20 @@ Categories: `ownership`, `network`, `email`, `web`, `subs`, `companies`, `waybac
 
 ## 5. `recce update`
 
-Refresh the WhatsMyName site database from upstream. Run this every few months — community keeps adding new platforms and fixing detection markers.
+Refresh the WhatsMyName site database and the Ofcom UK numbering index from upstream. Run this every few months: the WMN community keeps adding platforms and fixing detection markers, and Ofcom republishes number allocations every Wednesday. Refreshed data lands in `~/.cache/recce/` and takes precedence over the bundled snapshots.
 
 ```bash
 recce update
+recce update --only ofcom          # or --only wmn
 recce update --reset-cache
+recce update --only ofcom --bundled   # maintainers: rewrite recce/data/ofcom-numbering.json.xz
 ```
 
 ---
 
 ## 6. `recce doctor`
 
-Sanity check: shows which API keys you have set, total site count, WMN cache status, how many NSFW sites are gated, and lightweight network reachability.
+Sanity check: shows which API keys you have set, total site count, WMN cache status, the Ofcom numbering index (block count and publish date), how many NSFW sites are gated, and lightweight network reachability.
 
 ```bash
 recce doctor

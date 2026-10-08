@@ -19,7 +19,7 @@ Recce Pro is a separate product.
 
 - **Username search** across **720+ platforms** — backed by the canonical [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) database (~700 sites) merged with a hand-curated list of bespoke probes for places WMN doesn't cover (multi-instance Mastodon, Bluesky AT-Proto, redirect-marker detection for Bandcamp/Substack/Wordpress). Refresh with `recce update`. Adult sites are gated behind `--nsfw`.
 - **Email lookups** — Gravatar (with profile + linked accounts), DNS/MX provider detection, [EmailRep](https://emailrep.io) reputation & associated profiles, [Have I Been Pwned](https://haveibeenpwned.com) breach history, keyless breach checks via [XposedOrNot](https://xposedornot.com) and [LeakCheck](https://leakcheck.io) (incl. infostealer logs), Proton account detection with key-creation date, GitHub commit search (email → GitHub logins, real names, repos), [Hunter.io](https://hunter.io) verification, plus a consent-gated `--deep` mode that probes ~140 sites' signup/reset endpoints (via [holehe](https://github.com/megadose/holehe)) to discover registered accounts, with configurable concurrency and retry behavior.
-- **Phone number lookups** — full parse via Google's `libphonenumber` (region, type, carrier, timezone), optional [NumVerify](https://numverify.com) carrier verification, and manual-pivot rows with clickable URLs (WhatsApp, Google web search, Truecaller, Sync.me).
+- **Phone number lookups** — full parse via Google's `libphonenumber` (region, type, carrier, timezone), offline [Ofcom numbering data](https://www.ofcom.org.uk/phones-and-broadband/phone-numbers/numbering-data) for +44 numbers (the provider the block was originally allocated to, block status, area), optional [NumVerify](https://numverify.com) carrier verification, and manual-pivot rows with clickable URLs (WhatsApp, Google web search, Truecaller, Sync.me).
 - **Domain profiles** — a top-level summary card plus ownership, DNS, ASN, email infrastructure, Microsoft 365 realm fingerprinting, web metadata, TLS certificate details, passive subdomain discovery, Wayback first-seen, and company-register pivots.
 - **Batch mode** — pass `--file targets.txt` to any subcommand to run a list of identifiers in one go.
 - **Output** — Rich terminal tables, optional `--json` export, `--csv` export of all hits across all targets, `--show-misses` and `--show-errors` flags.
@@ -313,7 +313,8 @@ recce/
 ├── modules/
 │   ├── username.py   # multi-platform username hunter
 │   ├── email.py      # Gravatar + MX + EmailRep + HIBP + Hunter
-│   └── phone.py      # libphonenumber + NumVerify
+│   ├── ofcom.py      # offline Ofcom UK number-range index
+│   └── phone.py      # libphonenumber + Ofcom + NumVerify
 └── data/
     └── sites.json    # 80+ curated site definitions
 ```
@@ -337,3 +338,10 @@ calling it from `search_email` / `search_phone`.
 
 Licensed under AGPL-3.0-or-later from v0.4.0 onwards. Earlier releases remain
 MIT. See [`LICENSE`](LICENSE).
+
+Bundled data keeps its own terms. `recce/data/ofcom-numbering.json.xz` is
+derived from Ofcom's "Download numbering data" files (S1, S3, S5, S7, S8, S9)
+and "Telephone area codes" page, © Ofcom, reproduced under Ofcom's
+[copyright and re-use terms](https://www.ofcom.org.uk/about-ofcom/our-website/copyright).
+`recce/data/wmn-data.json` is from
+[WhatsMyName](https://github.com/WebBreacher/WhatsMyName).

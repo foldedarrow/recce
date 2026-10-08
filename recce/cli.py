@@ -35,6 +35,13 @@ from .licensing import has_pro_entitlement, pro_licence_path
 from .modules.domain import DOMAIN_CATEGORIES, domain_consent_error, search_domain
 from .modules.email import search_email
 from .modules.email_deep import deep_email_probes
+from .modules.ofcom import (
+    BUNDLED_INDEX,
+    OFCOM_NUMBERING_PAGE,
+    clear_ofcom_cache,
+    index_status,
+    refresh_ofcom_data,
+)
 from .modules.phone import search_phone
 from .modules.pivot import (
     DEFAULT_MAX_PER_LEVEL,
@@ -762,33 +769,71 @@ def cmd_domain(
     _maybe_export(reports, json_out, csv_out)
 
 
-@app.command("update", help="Refresh the bundled WhatsMyName site database from upstream.")
+UPDATE_SOURCES = ("wmn", "ofcom")
+
+
+@app.command(
+    "update",
+    help="Refresh the WhatsMyName site database and Ofcom UK numbering data from upstream.",
+)
 def cmd_update(
-    reset_cache: bool = typer.Option(False, "--reset-cache", help="Delete cached WMN data before updating."),
+    reset_cache: bool = typer.Option(False, "--reset-cache", help="Delete cached data before updating."),
+    only: str | None = typer.Option(
+        None, "--only", help="Refresh just one source: wmn or ofcom.", case_sensitive=False
+    ),
+    bundled: bool = typer.Option(
+        False,
+        "--bundled",
+        help="Write the Ofcom index into recce/data/ (maintainers, in a source checkout).",
+    ),
 ) -> None:
     settings = Settings.load()
-    banner("recce › update", subtitle="fetching latest WhatsMyName data")
-    if reset_cache and clear_wmn_cache():
-        console.print("[dim]Removed cached WMN data before refresh.[/]")
+    sources = UPDATE_SOURCES
+    if only:
+        if only.lower() not in UPDATE_SOURCES:
+            console.print(f"[red]error:[/] --only must be one of: {', '.join(UPDATE_SOURCES)}")
+            raise typer.Exit(2)
+        sources = (only.lower(),)
+    banner("recce › update", subtitle="fetching " + " + ".join(
+        {"wmn": "WhatsMyName", "ofcom": "Ofcom numbering"}[s] for s in sources
+    ))
 
-    async def run():
+    async def run(source: str) -> tuple[int, int]:
         async with http_client(
             user_agent=settings.user_agent,
             timeout=30.0,
             max_concurrency=2,
         ) as client:
-            return await refresh_wmn_data(client)
+            if source == "wmn":
+                return await refresh_wmn_data(client)
+            return await refresh_ofcom_data(client, dest=BUNDLED_INDEX if bundled else None)
 
-    try:
-        before, after = asyncio.run(run())
-    except Exception as e:
-        console.print(f"[red]error:[/] {e}")
-        raise typer.Exit(1) from e
-    delta = after - before
-    delta_str = f"[green]+{delta}[/]" if delta > 0 else f"[dim]{delta:+d}[/]"
-    console.print(
-        f"[bold green]✓[/] WMN refreshed: was {before} sites, now [bold]{after}[/] ({delta_str})."
-    )
+    failed = False
+    for source in sources:
+        if reset_cache:
+            cleared = clear_wmn_cache() if source == "wmn" else clear_ofcom_cache()
+            if cleared:
+                console.print(f"[dim]Removed cached {source} data before refresh.[/]")
+        try:
+            before, after = asyncio.run(run(source))
+        except Exception as e:
+            console.print(f"[red]error ({source}):[/] {e}")
+            failed = True
+            continue
+        delta = after - before
+        delta_str = f"[green]+{delta}[/]" if delta > 0 else f"[dim]{delta:+d}[/]"
+        if source == "wmn":
+            console.print(
+                f"[bold green]✓[/] WMN refreshed: was {before} sites, now [bold]{after}[/] ({delta_str})."
+            )
+        else:
+            status = index_status()
+            console.print(
+                f"[bold green]✓[/] Ofcom numbering refreshed: was {before} blocks, now "
+                f"[bold]{after}[/] ({delta_str}); Ofcom files published {status.get('published') or '?'}."
+            )
+    if failed:
+        raise typer.Exit(1)
 
 
 _HEALTH_STYLE = {
@@ -964,6 +1009,15 @@ def cmd_doctor(
         console.print(f"  [dim]WMN cache:[/] {validity}{site_text}  [dim]{cache['path']}[/]")
     else:
         console.print("  [dim]WMN cache:[/] using bundled snapshot")
+    ofcom = index_status()
+    if ofcom["loaded"]:
+        where = ofcom["path"] if ofcom["cached"] else "bundled snapshot"
+        console.print(
+            f"  [dim]Ofcom numbering:[/] {ofcom['blocks']} blocks · published "
+            f"{ofcom['published'] or '?'}  [dim]{where}[/]"
+        )
+    else:
+        console.print("  [dim]Ofcom numbering:[/] [yellow]unavailable[/] — run `recce update --only ofcom`")
     selftest_state = last_run_summary()
     if selftest_state:
         counts = selftest_state["summary"]
@@ -1182,6 +1236,7 @@ async def _doctor_network(settings: Settings, proxy: str | None = None) -> list[
     checks = [
         ("example.com", "https://example.com"),
         ("WhatsMyName data", WMN_REMOTE),
+        ("Ofcom numbering", OFCOM_NUMBERING_PAGE),
         ("GitHub API", "https://api.github.com/rate_limit"),
         ("crt.sh", "https://crt.sh/?q=example.com&output=json"),
         ("M365 realm", "https://login.microsoftonline.com/getuserrealm.srf?login=anyuser@example.com&xml=1"),
