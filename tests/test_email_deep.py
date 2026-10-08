@@ -246,3 +246,81 @@ async def test_no_verify_keeps_hits_and_skips_the_canary(monkeypatch) -> None:  
     assert hits[0].status is Status.FOUND
     assert "canary" not in hits[0].extra
     assert always.fn.calls == ["alice@example.test"]
+
+
+@pytest.mark.asyncio
+async def test_pinned_checks_use_their_exit_including_the_canary(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from recce.core.egress import Exit
+
+    target = "alice@example.test"
+    home = Exit("home", "socks5://127.0.0.1:1080", ipv4=True)
+    seen: dict[str, list[tuple[str, str | None, bool]]] = {}
+
+    def recording(name: str, registered: bool) -> DeepProbe:
+        async def validate(email: str) -> Result:
+            seen.setdefault(name, []).append((email, email_deep._exit_proxy.get(), email_deep._exit_ipv4.get()))
+            if registered and email == target:
+                return Result.taken(url=f"https://{name}")
+            return Result.available(url=f"https://{name}")
+
+        return DeepProbe("user-scanner", "shopping", name, validate)
+
+    holehe_clients: list[Any] = []
+
+    async def holehe_fn(email: str, client: Any, out: list[dict[str, Any]]) -> None:
+        holehe_clients.append(client)
+        out.append({"name": "alza.legacy", "domain": "alza.legacy", "exists": False, "rateLimit": False})
+
+    built: list[dict[str, Any]] = []
+    real_client = httpx.AsyncClient
+
+    def recording_client(**kwargs: Any) -> httpx.AsyncClient:
+        built.append(kwargs)
+        return real_client(**{k: v for k, v in kwargs.items() if k != "proxy"})
+
+    monkeypatch.setattr(email_deep.httpx, "AsyncClient", recording_client)
+    monkeypatch.setattr(
+        email_deep,
+        "_load_modules",
+        lambda: [
+            recording("alza.cz", True),
+            recording("spotify", False),
+            DeepProbe("holehe", "shopping", "alza.legacy", holehe_fn),
+        ],
+    )
+
+    hits = await email_deep.deep_email_probes(
+        target, proxy="socks5h://proton.test:1", show_progress=False, retry=False,
+        probe_exits=[("alza.*", home)],
+    )
+
+    by_name = {hit.source: hit for hit in hits}
+    # The pinned check and its made-up-address recheck both went via home, IPv4-only.
+    assert [(proxy, ipv4) for _, proxy, ipv4 in seen["alza.cz"]] == [("socks5://127.0.0.1:1080", True)] * 2
+    assert seen["alza.cz"][1][0] != target  # second call is the canary
+    assert by_name["alza.cz"].status is Status.FOUND
+    assert by_name["alza.cz"].extra["exit"] == "home (socks5://127.0.0.1:1080)"
+    # Unmatched checks keep the run's exit and carry no exit tag.
+    assert seen["spotify"] == [(target, "socks5h://proton.test:1", False)]
+    assert "exit" not in by_name["spotify"].extra
+    # holehe checks get an httpx client for the pinned exit.
+    assert {kw.get("proxy") for kw in built} == {"socks5h://proton.test:1", "socks5://127.0.0.1:1080"}
+    assert by_name["alza.legacy"].extra["exit"] == "home (socks5://127.0.0.1:1080)"
+
+
+def test_deep_exit_rules_parse_in_order() -> None:
+    from recce.core.egress import configured_exits, probe_exit_rules
+
+    env = {
+        "RECCE_EXITS": "tor=socks5h://127.0.0.1:9050;home=socks5://127.0.0.1:1080",
+        "RECCE_IPV4_EXITS": "home",
+        "RECCE_DEEP_EXITS": "Alza.*=home; ; broken; github=tor",
+    }
+
+    rules = probe_exit_rules(env)
+
+    assert [(pattern, exit_.name, exit_.ipv4) for pattern, exit_ in rules] == [
+        ("alza.*", "home", True),
+        ("github", "tor", False),
+    ]
+    assert ("deep email alza.*", rules[0][1]) in configured_exits(env)

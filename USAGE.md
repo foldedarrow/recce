@@ -82,6 +82,11 @@ recce username somehandle --fallback-proxy tor,home  # Tor first, then home for 
 - A comma list is a chain: each exit retries only the probes the earlier
   ones left blocked, so put the most private exit first (`tor,home` exposes
   your home IP only to the sites Tor couldn't reach).
+- `RECCE_DEEP_EXITS="alza.*=home"` pins individual `email --deep` checks to
+  an exit (`;`-separated `glob=exit` rules, first match wins). Use it for
+  sites that only answer from one kind of connection: the five Alza shops
+  answer only from a residential line. Unmatched checks keep the run's exit,
+  and pinned hits are tagged with their exit.
 - `RECCE_IPV4_EXITS=home` resolves targets to IPv4 only for the named
   fallback exits. Needed when an exit has no IPv6 route (e.g. a `socks5://`
   SSH tunnel to a v4-only host): sites with AAAA records otherwise fail with
