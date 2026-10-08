@@ -235,3 +235,18 @@ async def test_wayback_profiles_none_archived_is_one_not_found_hit() -> None:
     ctx = ProviderContext(settings=_settings(), client=Client(lambda u, p: Response(200, text="")))  # type: ignore[arg-type]
     hits = await WaybackProfilesProvider().query("sample", "username", ctx)
     assert [h.status for h in hits] == [Status.NOT_FOUND]
+
+
+@pytest.mark.asyncio
+async def test_hudsonrock_domain_reports_transport_reason() -> None:
+    class SlowClient(Client):
+        async def request_detailed(self, method, url, params=None, **kwargs):  # type: ignore[no-untyped-def]
+            self.calls.append((url, dict(params or {})))
+            return None, "timeout"
+
+    hits = await query_registered_providers(
+        "example.test", "domain", SlowClient(lambda u, p: None), _settings(),  # type: ignore[arg-type]
+        skip_provider_ids={"hunter", "shodan", "censys", "companies-house", "virustotal", "securitytrails"},
+    )
+    [hit] = [h for h in hits if h.source.startswith("Hudson")]
+    assert hit.status is Status.ERROR and hit.error == "timeout"

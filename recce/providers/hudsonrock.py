@@ -106,10 +106,16 @@ class HudsonRockProvider(Provider):
 
     async def _domain(self, domain: str, ctx: ProviderContext) -> list[Hit]:
         started = time.perf_counter()
-        resp = await ctx.client.get(f"{API}/search-by-domain", params={"domain": domain})
+        url = f"{API}/search-by-domain"
+        # Some domains take Hudson Rock over a minute; say "timeout", not "network".
+        detailed = getattr(ctx.client, "request_detailed", None)
+        if detailed is not None:
+            resp, reason = await detailed("GET", url, params={"domain": domain})
+        else:
+            resp, reason = await ctx.client.get(url, params={"domain": domain}), None
         elapsed = int((time.perf_counter() - started) * 1000)
         if resp is None:
-            return [self.make_hit("breach", Status.ERROR, error="network", elapsed_ms=elapsed)]
+            return [self.make_hit("breach", Status.ERROR, error=reason or "network", elapsed_ms=elapsed)]
         if resp.status_code == 429:
             return [self.make_hit("breach", Status.SKIPPED, summary="rate-limited", elapsed_ms=elapsed)]
         if resp.status_code != 200:
