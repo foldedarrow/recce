@@ -17,7 +17,7 @@ deployment box (Proton VPN egress) unless stated.
 | Username | Errors all said "network error / timeout" — Pi-hole DNS refusals looked like outages | Fixed — DNS/timeout/TLS/refused reasons (#24) |
 | Email | HIBP was the only breach source | Fixed — XposedOrNot, LeakCheck, Hudson Rock (#26, #29) |
 | Email | No identity pivots | Fixed — Proton key age, GitHub commit search (#26) |
-| Username | No profile data / identity extraction | Started — GitHub identity (#27) |
+| Username | No profile data / identity extraction | Fixed — GitHub identity (#27); GitLab, Mastodon, Bluesky, Keybase, HN, Chess.com, Docker Hub, npm, Steam (item 2) |
 | Domain | crt.sh 502s/timeouts left one source (50 subdomains) | Fixed — Cert Spotter + urlscan (894 subdomains) (#28) |
 | Domain | Subdomain DNS validation sequential (hours on big domains) | Fixed — concurrent (#28) |
 | Domain | Tech detection flagged React/Vue on words like "reaction" | Fixed (#28) |
@@ -36,12 +36,15 @@ accounts, EmailRep profiles. Build a pivot engine that:
 - records the chain (which hit produced which identifier) in the
   investigation, so a report can show *why* an account is attributed.
 
-### 2. Profile parsing for more sites
-GitHub identity proves the value. Next, structured extraction (name, bio,
-location, links, avatar, created date) for sites with public JSON:
-Reddit `about.json`, GitLab, Mastodon (`/api/v1/accounts/lookup`), Bluesky
-(`app.bsky.actor.getProfile`), Keybase proofs, Hacker News, Steam, Chess.com,
-Docker Hub, npm, PyPI. Feed the extracted links/usernames into (1).
+### 2. Profile parsing for more sites — shipped
+`recce/providers/profiles.py`: GitLab, Mastodon, Bluesky, Keybase (proofs),
+Hacker News, Chess.com, Docker Hub, npm (maintainer email) and Steam (XML)
+report name, bio, location, links, avatar and join date, with linked handles
+in `extra.usernames` and emails in `extra.emails` for (1). Left out after
+live checks: Reddit `about.json` (403 from Proton egress — revisit with
+*Egress*), PyPI (no user JSON), GitLab per-user detail (needs a token).
+Other instances (Mastodon beyond mastodon.social, self-hosted GitLab) are
+open.
 
 ### 3. Attribution confidence (username reuse)
 A username existing on 8 sites does not mean one person owns all 8. Score
