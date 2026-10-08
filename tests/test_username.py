@@ -272,3 +272,49 @@ async def test_check_site_reports_transport_error_reason() -> None:
 
     assert hit.status is Status.ERROR
     assert hit.error is not None and hit.error.startswith("DNS lookup failed")
+
+
+@pytest.mark.asyncio
+async def test_search_username_uses_impersonating_client_when_available(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import recce.modules.username as username
+
+    used: list[str] = []
+
+    class FakeBrowser:
+        closed = False
+
+        @classmethod
+        def from_client(cls, client):  # type: ignore[no-untyped-def]
+            return cls()
+
+        async def aclose(self) -> None:
+            FakeBrowser.closed = True
+
+    async def fake_search(name, client, **kwargs):  # type: ignore[no-untyped-def]
+        used.append(type(client).__name__)
+        return username.Report(query=name, query_type="username")
+
+    monkeypatch.setattr(username, "ImpersonatingClient", FakeBrowser)
+    monkeypatch.setattr(username, "_search_username", fake_search)
+    monkeypatch.setattr(username, "impersonation_available", lambda: True)
+
+    await username.search_username("alice", object(), show_progress=False)  # type: ignore[arg-type]
+    await username.search_username("alice", object(), show_progress=False, impersonate=False)  # type: ignore[arg-type]
+
+    assert used == ["FakeBrowser", "object"]
+    assert FakeBrowser.closed
+
+
+def test_describe_transport_error_handles_curl_messages() -> None:
+    from recce.core.http import describe_transport_error
+
+    class DNSError(Exception):
+        pass
+
+    class ReadTimeout(Exception):  # noqa: N818 - mirrors curl_cffi's exception name
+        pass
+
+    assert describe_transport_error(DNSError("Failed to perform, curl: (6) Could not resolve host: x.test")).startswith(
+        "DNS lookup failed"
+    )
+    assert describe_transport_error(ReadTimeout("curl: (28) Operation timed out after 12001 ms")) == "timeout"
