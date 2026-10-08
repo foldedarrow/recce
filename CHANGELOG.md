@@ -9,6 +9,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Profile parsing** for nine more sites (keyless username providers): GitLab,
+  Mastodon (mastodon.social), Bluesky, Keybase, Hacker News, Chess.com,
+  Docker Hub, npm and Steam. Each reads the site's public API and reports
+  display name, bio, location, links, avatar and join date; linked handles
+  (Keybase proofs, Mastodon profile fields, websites/streams pointing at
+  known profile sites) go to `extra.usernames`, and emails (npm maintainer
+  email, GitLab public email, emails in bios) to `extra.emails`. Reddit
+  (`about.json` 403s from VPN egress) and PyPI (no user JSON) were left out.
 - **Hudson Rock** infostealer lookups for emails and usernames (keyless): when
   and where a machine holding the identifier's credentials was infected. The
   partial passwords/logins the API returns are never stored or shown.
