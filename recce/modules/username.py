@@ -658,6 +658,9 @@ async def search_username(
             username, "username", client, settings, skip_provider_ids=skip_provider_ids
         ):
             report.add(hit)
+        from ..providers.wayback_profiles import mark_deleted
+
+        mark_deleted(report)
         report.finish()
     if attribute_hits:
         from .attribution import attribute

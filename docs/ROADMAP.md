@@ -75,7 +75,12 @@ home-connection or residential exit needs a proxy endpoint outside the VPN.
 Some sites block Tor as hard as VPNs, so per-site exit preferences
 (learned from selftest results) would be the next step.
 
-### 6. More sources
+### 6. More sources — first batch shipped
+Shipped: Hudson Rock `search-by-domain`, Hunter domain search (email
+format), reverse IP (HackerTarget), Wayback key pages, and Wayback profile
+snapshots for usernames (`recce/modules/archive.py` holds the shared CDX
+client). Still open, below.
+
 - **Email:** Microsoft consumer-account existence (the AAD `GetCredentialType`
   endpoint is unreliable for outlook.com — needs a different approach);
   keyed providers for DeHashed / Intelligence X / Snusbase (summaries only,
@@ -84,10 +89,8 @@ Some sites block Tor as hard as VPNs, so per-site exit preferences
 - **Phone:** Ofcom numbering data (UK range holder / original network,
   offline); a search-API provider (Brave Search / Google CSE / SerpAPI) so the
   dork links return real results automatically instead of needing clicks.
-- **Domain:** implement the VirusTotal and SecurityTrails placeholders;
-  Hudson Rock `search-by-domain` (infected employees/users counts); reverse
-  IP; Wayback snapshots of key pages; Hunter domain search for email format.
-- **Username:** Wayback snapshots for deleted profiles.
+- **Domain:** implement the VirusTotal and SecurityTrails placeholders
+  (needs keys to verify live).
 
 ### 7. Reporting
 HTML dossier (summary, timeline, identity graph, evidence links), and

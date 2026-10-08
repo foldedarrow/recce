@@ -23,6 +23,7 @@ from .profiles import PROFILE_PROVIDERS
 from .proton import ProtonKeyProvider
 from .shodan import ShodanProvider
 from .vonage import VonageNumberInsightProvider
+from .wayback_profiles import WaybackProfilesProvider
 from .xposedornot import XposedOrNotProvider
 
 PROVIDERS: tuple[Provider, ...] = (
@@ -44,6 +45,7 @@ PROVIDERS: tuple[Provider, ...] = (
     GitHubCommitsProvider(),
     GitHubIdentityProvider(),
     *PROFILE_PROVIDERS,
+    WaybackProfilesProvider(),
     HunterProvider(),
     NumVerifyProvider(),
     VonageNumberInsightProvider(),

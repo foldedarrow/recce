@@ -6,6 +6,11 @@ A hit means the identifier was found in credentials stolen from a machine
 running infostealer malware. recce reports when and where (date, OS,
 computer name, malware path, masked IP, service counts) and deliberately
 drops the partial passwords and top logins the API also returns.
+
+For a domain, the API counts infected employees (credentials for the
+domain's own services) and users (customers logging in to it), plus the
+domain URLs credentials were stolen for, which often names internal login
+portals. Password statistics are dropped.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from .base import Provider, ProviderContext
 API = "https://cavalier.hudsonrock.com/api/json/v2/osint-tools"
 # Fields never surfaced, even in `extra`: credential material.
 _DROPPED = {"top_passwords", "top_logins"}
+_DOMAIN_DROPPED = {"employeePasswords", "userPasswords", "logo"}
 
 
 class HudsonRockProvider(Provider):
@@ -28,15 +34,17 @@ class HudsonRockProvider(Provider):
             id="hudsonrock",
             name="Hudson Rock (infostealers)",
             tier="free",
-            enriches=("email", "username"),
+            enriches=("email", "username", "domain"),
             config_keys=(),
             setting_attrs=(),
             homepage="https://www.hudsonrock.com/free-tools",
-            notes="infostealer-infected machines tied to an email/username; no key needed",
+            notes="infostealer-infected machines tied to an email/username, or counts for a domain; no key needed",
             key_optional=True,
         )
 
     async def query(self, target: str, target_type: str, ctx: ProviderContext) -> list[Hit]:
+        if target_type == "domain":
+            return await self._domain(target, ctx)
         if target_type not in {"email", "username"}:
             return []
         endpoint, param = ("search-by-email", "email") if target_type == "email" else ("search-by-username", "username")
@@ -95,3 +103,65 @@ class HudsonRockProvider(Provider):
                 )
             )
         return hits
+
+    async def _domain(self, domain: str, ctx: ProviderContext) -> list[Hit]:
+        started = time.perf_counter()
+        resp = await ctx.client.get(f"{API}/search-by-domain", params={"domain": domain})
+        elapsed = int((time.perf_counter() - started) * 1000)
+        if resp is None:
+            return [self.make_hit("breach", Status.ERROR, error="network", elapsed_ms=elapsed)]
+        if resp.status_code == 429:
+            return [self.make_hit("breach", Status.SKIPPED, summary="rate-limited", elapsed_ms=elapsed)]
+        if resp.status_code != 200:
+            return [self.make_hit("breach", Status.UNKNOWN, summary=f"HTTP {resp.status_code}", elapsed_ms=elapsed)]
+        try:
+            data: dict[str, Any] = resp.json() or {}
+        except Exception:
+            return [self.make_hit("breach", Status.UNKNOWN, summary="bad json", elapsed_ms=elapsed)]
+        employees = int(data.get("employees") or 0)
+        users = int(data.get("users") or 0)
+        third = int(data.get("third_parties") or 0)
+        if not (employees or users or third):
+            return [
+                self.make_hit(
+                    "breach",
+                    Status.NOT_FOUND,
+                    summary="no infostealer infections tied to this domain",
+                    elapsed_ms=elapsed,
+                )
+            ]
+        urls = (data.get("data") or {}).get("employees_urls") or []
+        top_urls = [
+            # Query strings can carry tokens: keep scheme, host and path only.
+            {"url": str(u.get("url")).split("?", 1)[0].split("#", 1)[0], "occurrence": u.get("occurrence")}
+            for u in sorted(urls, key=lambda u: -(u.get("occurrence") or 0))
+            if isinstance(u, dict) and u.get("url")
+        ][:10]
+        families = data.get("stealerFamilies") or {}
+        top_families = sorted(
+            ((k, v) for k, v in families.items() if isinstance(v, int) and k != "total"),
+            key=lambda kv: -kv[1],
+        )[:5]
+        parts = [f"{employees:,} employee(s), {users:,} user(s), {third:,} third-party login(s) on infected machines"]
+        if data.get("last_employee_compromised"):
+            parts.append(f"last employee infection {str(data['last_employee_compromised'])[:10]}")
+        if top_families:
+            parts.append("malware: " + ", ".join(f"{name} ({n:,})" for name, n in top_families))
+        if top_urls:
+            parts.append("employee logins stolen for: " + ", ".join(u["url"] for u in top_urls[:3]))
+        summary_extra = {
+            k: v[:20] if isinstance(v, list) else v
+            for k, v in data.items()
+            if k not in _DOMAIN_DROPPED and k != "data"
+        }
+        return [
+            self.make_hit(
+                "breach",
+                Status.FOUND,
+                url=f"https://www.hudsonrock.com/search?domain={domain}",
+                summary=" · ".join(parts),
+                confidence=0.8,
+                elapsed_ms=elapsed,
+                extra={**summary_extra, "employee_urls": top_urls},
+            )
+        ]

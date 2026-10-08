@@ -9,6 +9,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- More sources (roadmap #6, first batch):
+  - **Domain:** Hudson Rock infostealer counts (infected employees/users,
+    malware families, and the domain URLs employee logins were stolen for;
+    password stats and URL query strings are dropped); Hunter domain search
+    (email address format, organisation, address count, at one credit per
+    domain; individual addresses aren't listed); reverse IP via HackerTarget
+    (shared hosting flagged); latest Wayback copies of about/contact/team/
+    privacy pages.
+  - **Username:** Wayback profiles: archived profile pages on 16 major sites,
+    flagged "deleted or renamed?" when the live probe finds nothing.
 - **Egress control**: named exits (`RECCE_EXITS`), a per-module exit
   (`RECCE_<MODULE>_PROXY`, `RECCE_PROXY`, `--proxy <url|name|direct>`), and a
   username **fallback exit** (`--fallback-proxy`,
