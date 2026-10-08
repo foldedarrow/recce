@@ -19,6 +19,7 @@ from .hudsonrock import HudsonRockProvider
 from .hunter import HunterProvider
 from .leakcheck import LeakCheckProvider
 from .numverify import NumVerifyProvider
+from .profiles import PROFILE_PROVIDERS
 from .proton import ProtonKeyProvider
 from .shodan import ShodanProvider
 from .vonage import VonageNumberInsightProvider
@@ -42,6 +43,7 @@ PROVIDERS: tuple[Provider, ...] = (
     ProtonKeyProvider(),
     GitHubCommitsProvider(),
     GitHubIdentityProvider(),
+    *PROFILE_PROVIDERS,
     HunterProvider(),
     NumVerifyProvider(),
     VonageNumberInsightProvider(),
