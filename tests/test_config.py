@@ -35,3 +35,19 @@ def test_default_user_agent_identifies_recce(tmp_path: Path, monkeypatch) -> Non
 
     assert settings.user_agent == DEFAULT_USER_AGENT
     assert settings.user_agent.startswith("recce/")
+
+
+def test_blank_environment_value_does_not_mask_env_file_key(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    env_file = tmp_path / "user.env"
+    env_file.write_text("HIBP_API_KEY=from-file\nHUNTER_API_KEY=from-file\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("recce.config.user_env_path", lambda: env_file)
+    # A systemd EnvironmentFile with blank placeholders sets these to "".
+    monkeypatch.setenv("HIBP_API_KEY", "")
+    # A real value in the environment still takes precedence over the file.
+    monkeypatch.setenv("HUNTER_API_KEY", "from-environment")
+
+    settings = Settings.load()
+
+    assert settings.hibp_api_key == "from-file"
+    assert settings.hunter_api_key == "from-environment"

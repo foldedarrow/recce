@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 from recce import __version__
 
@@ -17,10 +17,20 @@ DEFAULT_USER_AGENT = f"recce/{__version__} (+https://github.com/foldedarrow/recc
 def _load_env() -> None:
     cwd_env = Path.cwd() / ".env"
     if cwd_env.exists():
-        load_dotenv(cwd_env, override=False)
+        _load_env_file(cwd_env)
     home_env = user_env_path()
     if home_env.exists():
-        load_dotenv(home_env, override=False)
+        _load_env_file(home_env)
+
+
+def _load_env_file(path: Path) -> None:
+    # Real environment variables win, but an *empty* one (e.g. a blank
+    # `HIBP_API_KEY=` in a systemd EnvironmentFile) must not mask a key the
+    # file actually sets.
+    for key, value in dotenv_values(path).items():
+        if value and os.environ.get(key) == "":
+            del os.environ[key]
+    load_dotenv(path, override=False)
 
 
 def user_config_dir() -> Path:
