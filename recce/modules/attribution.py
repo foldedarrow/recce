@@ -82,7 +82,12 @@ async def attribute(report: Report, client: Any = None, *, fetch_avatars: bool =
     """Cluster `report`'s FOUND hits; annotate each with `extra["attribution"]`."""
     for hit in report.hits:
         hit.extra.pop("attribution", None)
-    nodes = [_node(i, hit, report.query) for i, hit in enumerate(report.hits) if hit.is_found]
+    # Archive captures are evidence about another site's account, not accounts.
+    nodes = [
+        _node(i, hit, report.query)
+        for i, hit in enumerate(report.hits)
+        if hit.is_found and hit.category != "archive"
+    ]
     if fetch_avatars and client is not None:
         await _hash_avatars(nodes, client)
 

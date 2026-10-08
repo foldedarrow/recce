@@ -10,6 +10,9 @@ from recce.providers import (
     query_registered_providers,
 )
 
+# Keyless domain providers that would otherwise hit the fake client.
+KEYLESS_DOMAIN_PROVIDERS = {"hudsonrock"}
+
 
 @pytest.fixture(autouse=True)
 def _isolate_pro_entitlement(tmp_path, monkeypatch):  # type: ignore[no-untyped-def]
@@ -251,22 +254,6 @@ async def test_hunter_provider_queries_api_when_configured() -> None:
 
 
 @pytest.mark.asyncio
-async def test_hunter_domain_pivots_remain_non_queryable_until_implemented() -> None:
-    client = DummyClient(DummyResponse(200, {}))
-
-    hits = await query_registered_providers(
-        "example.com",
-        "domain",
-        client,  # type: ignore[arg-type]
-        _settings(hunter_api_key="hunter-key"),
-        skip_provider_ids={"shodan", "censys"},
-    )
-
-    assert hits == []
-    assert client.requests == []
-
-
-@pytest.mark.asyncio
 async def test_numverify_provider_returns_not_configured_skip() -> None:
     hits = await query_registered_providers(
         "+447826916903",
@@ -443,6 +430,7 @@ async def test_shodan_provider_returns_not_configured_skip(monkeypatch) -> None:
         "domain",
         DummyClient(None),  # type: ignore[arg-type]
         _settings(),
+        skip_provider_ids=KEYLESS_DOMAIN_PROVIDERS,
     )
 
     shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
@@ -461,6 +449,7 @@ async def test_shodan_provider_is_pro_gated_before_query(monkeypatch) -> None:  
         "domain",
         client,  # type: ignore[arg-type]
         _settings(shodan_api_key="shodan-key"),
+        skip_provider_ids=KEYLESS_DOMAIN_PROVIDERS,
     )
 
     shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
@@ -490,6 +479,7 @@ async def test_shodan_provider_queries_api_when_pro_active(monkeypatch) -> None:
         "domain",
         client,  # type: ignore[arg-type]
         _settings(shodan_api_key="shodan-key"),
+        skip_provider_ids=KEYLESS_DOMAIN_PROVIDERS,
     )
 
     shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
@@ -511,7 +501,7 @@ async def test_shodan_provider_can_be_skipped(monkeypatch) -> None:  # type: ign
         "domain",
         client,  # type: ignore[arg-type]
         _settings(shodan_api_key="shodan-key"),
-        skip_provider_ids={"shodan"},
+        skip_provider_ids={"shodan", "hudsonrock"},
     )
 
     assert all(hit.source != "Shodan" for hit in hits)
@@ -550,7 +540,7 @@ async def test_shodan_free_plan_403_reports_plan_not_bad_key(monkeypatch) -> Non
         "domain",
         client,  # type: ignore[arg-type]
         _settings(shodan_api_key="shodan-key"),
-        skip_provider_ids={"censys"},
+        skip_provider_ids={"censys", "hudsonrock"},
     )
 
     shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
@@ -595,7 +585,7 @@ async def test_shodan_free_plan_falls_back_to_host_lookups(monkeypatch) -> None:
         "domain",
         client,  # type: ignore[arg-type]
         _settings(shodan_api_key="shodan-key"),
-        skip_provider_ids={"censys"},
+        skip_provider_ids={"censys", "hudsonrock"},
     )
 
     shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
@@ -622,6 +612,7 @@ async def test_shodan_401_reports_invalid_key(monkeypatch) -> None:  # type: ign
         "domain",
         client,  # type: ignore[arg-type]
         _settings(shodan_api_key="shodan-key"),
+        skip_provider_ids=KEYLESS_DOMAIN_PROVIDERS,
     )
 
     shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
@@ -693,7 +684,7 @@ async def test_censys_provider_reports_hosts_and_cert(monkeypatch) -> None:  # t
         "domain",
         client,  # type: ignore[arg-type]
         _settings(censys_api_token="censys_tok"),
-        skip_provider_ids={"shodan"},
+        skip_provider_ids={"shodan", "hudsonrock"},
     )
 
     censys_hits = [hit for hit in hits if hit.source == "Censys"]
@@ -725,7 +716,7 @@ async def test_censys_provider_reports_inactive_token(monkeypatch) -> None:  # t
         "domain",
         client,  # type: ignore[arg-type]
         _settings(censys_api_token="censys_bad", censys_org_id="org-uuid"),
-        skip_provider_ids={"shodan"},
+        skip_provider_ids={"shodan", "hudsonrock"},
     )
 
     censys_hits = [hit for hit in hits if hit.source == "Censys"]
@@ -757,7 +748,7 @@ async def test_censys_provider_retries_once_on_rate_limit(monkeypatch) -> None: 
         "domain",
         client,  # type: ignore[arg-type]
         _settings(censys_api_token="censys_tok"),
-        skip_provider_ids={"shodan"},
+        skip_provider_ids={"shodan", "hudsonrock"},
     )
 
     censys_hits = [hit for hit in hits if hit.source == "Censys"]

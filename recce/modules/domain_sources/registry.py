@@ -24,11 +24,12 @@ DOMAIN_CATEGORIES = {"ownership", "network", "email", "web", "subs", "companies"
 
 
 def source_registry() -> list[tuple[str, DomainSource]]:
-    from . import companies, dns, email, ownership, subdomains, wayback, web
+    from . import companies, dns, email, ownership, reverse_ip, subdomains, wayback, web
 
     return [
         ("ownership", ownership.query),
         ("network", dns.query),
+        ("network", reverse_ip.query),
         ("email", email.query),
         ("web", web.query),
         ("subs", subdomains.query),

@@ -26,6 +26,11 @@ recce username foldedarrow --csv hits.csv               # export CSV
 recce username foldedarrow --show-misses                # show every site, not just hits
 ```
 
+Username searches also check the Wayback Machine for archived profile pages
+on 16 major sites. An archived profile shows the account existed at that
+date, and is flagged "deleted or renamed?" when the live probe now finds
+nothing.
+
 **Categories** include: `dev`, `social`, `video`, `audio`, `art`, `gaming`, `fandom`, `blog`, `creator`, `business`, `fitness`, `civic`, `messaging`, `web3`, plus more from WMN.
 
 Username probes use global concurrency plus a per-domain throttle. The default
@@ -154,8 +159,12 @@ Output gives you carrier, region, type, plus clickable URLs for **WhatsApp**, **
 ## 4. `recce domain <name>`
 
 Profile a domain or URL. Default mode is passive: ownership/RDAP/whois,
-DNS/network, email infrastructure, M365 realm, web metadata, TLS certificate,
-passive subdomains, company pivots, and Wayback first-seen.
+DNS/network, reverse IP (other domains on the same address), email
+infrastructure, M365 realm, web metadata, TLS certificate, passive subdomains,
+company pivots, Wayback first-seen plus the latest archived about/contact/
+team/privacy pages, Hudson Rock infostealer counts (infected employees and
+users, and the domain URLs their logins were stolen for), and, with
+`HUNTER_API_KEY`, the email address format (one Hunter credit per domain).
 Results start with a compact summary card so the key facts are visible before
 the detailed evidence table.
 
