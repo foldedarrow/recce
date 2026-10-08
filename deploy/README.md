@@ -61,6 +61,36 @@ known account to test with). To probe flagged sites anyway, pass
 `RECCE_FLAGGED_SITES` in `/etc/recce/web.env` for the GUI. A flag expires
 after 30 days or as soon as the site's definition changes.
 
+### Investigation monitoring + ntfy alerts
+
+Optional daily re-run of every **open** case's saved searches
+(`recce investigations monitor`). It saves each re-run to the case and sends an
+[ntfy](https://ntfy.sh) push only when a run finds evidence that no earlier run
+of that search had, so a site that was briefly blocked doesn't alert when it
+answers again. Deep and bruteforce searches are skipped unless the unit adds
+`--include-active`.
+
+Add to `~/.config/recce/.env` (not `web.env`):
+
+```bash
+RECCE_NTFY_URL=https://ntfy.sh/<long-random-topic>   # or your own ntfy server
+# RECCE_NTFY_TOKEN=tk_...                             # if the topic is protected
+# RECCE_NTFY_DETAIL=1                                 # include searches + sources
+```
+
+Alerts name the **case reference and counts only** by default: anyone who knows
+a public ntfy.sh topic can read it, so pick a long random topic, or self-host
+ntfy, before turning on `RECCE_NTFY_DETAIL`.
+
+```bash
+sudo cp deploy/recce-monitor.service deploy/recce-monitor.timer /etc/systemd/system/   # edit User/Group/HOME
+sudo systemctl daemon-reload
+sudo systemctl enable --now recce-monitor.timer
+recce investigations notify-test                  # confirm the phone gets it
+sudo systemctl start recce-monitor.service        # optional first run
+journalctl -u recce-monitor -n 60 --no-pager
+```
+
 ## 3. Caddy + login
 
 ```bash

@@ -9,6 +9,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Investigation monitoring with ntfy alerts:** `recce investigations monitor`
+  re-runs every open case's saved searches, saves the runs, and pushes an ntfy
+  alert when evidence is new to *every* earlier run of that search. Deep and
+  bruteforce searches are skipped unless `--include-active`. Alerts carry the
+  case reference and counts only (`RECCE_NTFY_DETAIL=1` for more).
+  `recce investigations notify-test` checks delivery; `deploy/recce-monitor.*`
+  runs it daily. The GUI's re-run button now shares this code.
 - **Deep email canary**: every `recce email --deep` hit is re-probed with a
   made-up address at the same domain, and sites that "find" it too are
   downgraded to unknown (`--no-deep-verify` turns this off). The canary uses

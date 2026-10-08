@@ -1,0 +1,25 @@
+# One-shot: re-run every open investigation's saved searches and push an ntfy
+# alert when a run finds evidence no earlier run had. Paired with
+# recce-monitor.timer. Alerts need RECCE_NTFY_URL in ~/.config/recce/.env.
+# Deep/bruteforce searches are skipped (add --include-active to opt in).
+[Unit]
+Description=recce: monitor open investigations
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=youruser
+Group=youruser
+Environment=HOME=/home/youruser
+Environment=COLUMNS=160
+EnvironmentFile=-/etc/recce/web.env
+ExecStart=/opt/recce/.venv/bin/recce investigations monitor
+Nice=10
+TimeoutStartSec=2h
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+# The investigations DB lives under ~/.local/share/recce; selftest flags in ~/.cache.
+ReadWritePaths=/home/youruser/.local/share/recce /home/youruser/.cache
