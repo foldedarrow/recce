@@ -64,6 +64,7 @@ class HttpClient:
         json: Any | None = None,
         data: Any | None = None,
         follow_redirects: bool = True,
+        timeout: float | None = None,
     ) -> httpx.Response | None:
         resp, _ = await self.request_detailed(
             method,
@@ -73,6 +74,7 @@ class HttpClient:
             json=json,
             data=data,
             follow_redirects=follow_redirects,
+            timeout=timeout,
         )
         return resp
 
@@ -86,9 +88,16 @@ class HttpClient:
         json: Any | None = None,
         data: Any | None = None,
         follow_redirects: bool = True,
+        timeout: float | None = None,
     ) -> tuple[httpx.Response | None, str | None]:
         """Like `request`, but on failure also returns a short reason
-        ("DNS lookup failed", "timeout", ...) instead of a bare None."""
+        ("DNS lookup failed", "timeout", ...) instead of a bare None.
+
+        `timeout` overrides the client's read timeout for this request (for
+        slow APIs such as the Wayback CDX)."""
+        extra: dict[str, Any] = {}
+        if timeout is not None:
+            extra["timeout"] = httpx.Timeout(timeout, connect=min(timeout, 6.0))
         last_exc: Exception | None = None
         for attempt in range(self._retries + 1):
             try:
@@ -101,6 +110,7 @@ class HttpClient:
                         json=json,
                         data=data,
                         follow_redirects=follow_redirects,
+                        **extra,
                     )
                 return resp, None
             except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPError) as e:
@@ -165,8 +175,11 @@ class ImpersonatingClient:
         json: Any | None = None,
         data: Any | None = None,
         follow_redirects: bool = True,
+        timeout: float | None = None,
     ) -> tuple[Any, str | None]:
         from curl_cffi.requests.exceptions import RequestException
+
+        extra: dict[str, Any] = {"timeout": timeout} if timeout is not None else {}
 
         last_exc: Exception | None = None
         for attempt in range(self._retries + 1):
@@ -180,6 +193,7 @@ class ImpersonatingClient:
                         json=json,
                         data=data,
                         allow_redirects=follow_redirects,
+                        **extra,
                     )
                 return resp, None
             except RequestException as e:

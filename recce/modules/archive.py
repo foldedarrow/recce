@@ -2,15 +2,22 @@
 """Wayback Machine CDX lookups shared by the domain and username modules.
 
 archive.org rate-limits hard (and blocks an IP for a while after repeated
-429s), so callers keep concurrency low and stop at the first 429.
+429s), so callers keep concurrency low and stop at the first 429. CDX also
+answers 503 within seconds when one IP sends requests in parallel, so
+`capture` retries a 503 once after a pause.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
 CDX = "https://web.archive.org/cdx/search/cdx"
+# CDX takes 7-26s for popular profile URLs (measured from the box); recce's
+# default 12s request timeout cut most of them off.
+CDX_TIMEOUT = 45.0
+BUSY_RETRY_DELAY = 4.0
 
 
 class ArchiveRateLimitError(Exception):
@@ -50,7 +57,10 @@ async def capture(client: Any, url: str, *, latest: bool = False) -> Capture | N
     }
     if latest:
         params["fastLatest"] = "true"
-    resp = await client.get(CDX, params=params)
+    resp = await client.get(CDX, params=params, timeout=CDX_TIMEOUT)
+    if resp is not None and resp.status_code == 503:
+        await asyncio.sleep(BUSY_RETRY_DELAY)
+        resp = await client.get(CDX, params=params, timeout=CDX_TIMEOUT)
     if resp is None:
         raise RuntimeError("network")
     if resp.status_code == 429:

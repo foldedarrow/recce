@@ -203,7 +203,7 @@ async def test_wayback_profiles_finds_archived_and_flags_deleted() -> None:
 
     def handler(url, params):  # type: ignore[no-untyped-def]
         if params["url"] == "reddit.com/user/sample":
-            return Response(503, text="busy")
+            return Response(500, text="broken")
         ts = archived.get(params["url"])
         return _cdx([[ts, f"https://{params['url']}"]]) if ts else Response(200, text="")
 
@@ -250,3 +250,71 @@ async def test_hudsonrock_domain_reports_transport_reason() -> None:
     )
     [hit] = [h for h in hits if h.source.startswith("Hudson")]
     assert hit.status is Status.ERROR and hit.error == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_cdx_requests_use_the_long_archive_timeout() -> None:
+    from recce.modules.archive import CDX_TIMEOUT, capture
+
+    seen: dict = {}
+
+    class KwClient:
+        async def get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+            seen.update(kwargs)
+            return Response(200, text="")
+
+    assert await capture(KwClient(), "github.com/sample") is None
+    assert seen["timeout"] == CDX_TIMEOUT > 12
+
+
+@pytest.mark.asyncio
+async def test_http_client_per_request_timeout_reaches_httpx() -> None:
+    import httpx
+
+    from recce.core.http import HttpClient
+
+    timeouts: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        timeouts.append(request.extensions["timeout"])
+        return httpx.Response(200, text="ok")
+
+    client = HttpClient(user_agent="recce-test", timeout=12.0)
+    await client.aclose()
+    client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=12.0)
+    try:
+        await client.get("https://archive.example.test/a", timeout=45.0)
+        await client.get("https://archive.example.test/b")
+    finally:
+        await client.aclose()
+
+    assert timeouts[0]["read"] == 45.0
+    assert timeouts[1]["read"] == 12.0
+
+
+@pytest.mark.asyncio
+async def test_cdx_retries_a_busy_503_once(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from recce.modules import archive
+
+    monkeypatch.setattr(archive, "BUSY_RETRY_DELAY", 0)
+    answers = [Response(503, text="busy"), _cdx([["20150101000000", "https://github.com/sample"]])]
+    client = Client(lambda u, p: answers.pop(0))
+
+    found = await archive.capture(client, "github.com/sample")
+
+    assert found is not None and found.date == "2015-01-01"
+    assert len(client.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_wayback_profiles_stop_at_the_time_budget(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from recce.providers import wayback_profiles
+
+    monkeypatch.setattr(wayback_profiles, "TIME_BUDGET", -1.0)
+    ctx = ProviderContext(settings=_settings(), client=Client(lambda u, p: Response(200, text="")))  # type: ignore[arg-type]
+
+    [hit] = await WaybackProfilesProvider().query("sample", "username", ctx)
+
+    assert hit.status is Status.UNKNOWN
+    assert hit.extra["unchecked_sites"][0] == "GitHub"
+    assert ctx.client.calls == []
