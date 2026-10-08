@@ -21,6 +21,7 @@ from recce.core.http import http_client
 from recce.core.investigations import InvestigationStore, delete_confirmation_matches
 from recce.core.result import Report, Status
 from recce.licensing import has_pro_entitlement, pro_licence_path, write_pro_licence
+from recce.modules.attribution import uncorroborated_accounts
 from recce.modules.domain import search_domain
 from recce.modules.domain_summary import build_domain_summary
 from recce.modules.email import search_email
@@ -261,9 +262,9 @@ def render_clusters(report: Report) -> None:
                         f"{m.source} {m.created_at[:10]}" for m in cluster.timeline if m.created_at
                     )
                 )
-    alone = len(report.found) - sum(len(c.members) for c in report.clusters)
+    alone = uncorroborated_accounts(report)
     if alone:
-        st.caption(f"{alone} other hit(s) match on the username only.")
+        st.caption(f"{alone} other account(s) match on the username only.")
 
 
 def report_to_df(report: Report) -> pd.DataFrame:

@@ -240,14 +240,17 @@ def render_pivot_chain(run) -> None:  # type: ignore[no-untyped-def]
 
 def render_clusters(report: Report) -> None:
     """Which FOUND hits look like the same person, and why."""
-    found = report.found
-    if not report.clusters or not found:
-        return
+    from ..modules.attribution import uncorroborated_accounts
+
+    if not any("attribution" in h.extra for h in report.found):
+        return  # not a username report, or attribution was skipped
     parts: list[Text] = []
     for cluster in report.clusters:
         head = Text()
         head.append(f"Cluster {cluster.id}", style="bold")
-        head.append(f"  {len(cluster.members)} profiles · confidence {cluster.confidence:.2f}", style="green")
+        head.append(
+            f"  {len(cluster.members)} accounts · confidence {cluster.confidence:.2f}", style="green"
+        )
         parts.append(head)
         parts.append(Text("  " + ", ".join(m.source for m in cluster.members), style="cyan"))
         for signal in cluster.signals[:8]:
@@ -257,10 +260,16 @@ def render_clusters(report: Report) -> None:
         if cluster.timeline:
             steps = " → ".join(f"{m.source} {m.created_at[:10]}" for m in cluster.timeline if m.created_at)
             parts.append(Text(f"  timeline: {steps}", style="dim"))
-    clustered = sum(len(c.members) for c in report.clusters)
-    alone = len(found) - clustered
+    alone = uncorroborated_accounts(report)
     if alone:
-        parts.append(Text(f"{alone} other hit(s) match on the username only — not corroborated.", style="yellow"))
+        lead = "other " if report.clusters else ""
+        parts.append(
+            Text(
+                f"{alone} {lead}account(s) match on the username only — no profile data "
+                "links them to each other.",
+                style="yellow",
+            )
+        )
     console.print(
         Panel(Group(*parts), title="[bold cyan]Likely the same person[/]", border_style="cyan")
     )
