@@ -1,0 +1,215 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+from pathlib import Path
+
+import httpx
+import pytest
+from typer.testing import CliRunner
+
+from recce.cli import app
+from recce.core.egress import (
+    DIRECT_EXIT,
+    Exit,
+    configured_exits,
+    named_exits,
+    parse_exit,
+    redact_proxy,
+    resolve_exit,
+    resolve_fallback,
+)
+from recce.core.investigations import InvestigationStore
+from recce.core.result import Report, Status
+from recce.modules import username as username_mod
+
+runner = CliRunner()
+TOR = "socks5h://127.0.0.1:9050"
+ENV = {
+    "RECCE_EXITS": f"tor={TOR}; home=socks5h://kit:s3cret@10.0.0.2:1080",
+    "RECCE_PROXY": "home",
+    "RECCE_DOMAIN_PROXY": "direct",
+    "RECCE_USERNAME_FALLBACK_PROXY": "tor",
+}
+
+
+# --- configuration -----------------------------------------------------------
+
+
+def test_redact_proxy_masks_passwords_only() -> None:
+    assert redact_proxy("socks5h://kit:s3cret@10.0.0.2:1080") == "socks5h://kit:***@10.0.0.2:1080"
+    assert redact_proxy(TOR) == TOR
+    assert Exit("home", "http://kit:s3cret@proxy.test:3128").label == "home (http://kit:***@proxy.test:3128)"
+    assert DIRECT_EXIT.label == "direct"
+
+
+def test_named_exits_and_parse_exit() -> None:
+    exits = named_exits(ENV)
+    assert exits == {"tor": TOR, "home": "socks5h://kit:s3cret@10.0.0.2:1080"}
+    assert parse_exit("TOR", exits) == Exit("tor", TOR)
+    assert parse_exit("direct", exits) == DIRECT_EXIT
+    assert parse_exit("http://proxy.test:3128", exits) == Exit("http://proxy.test:3128", "http://proxy.test:3128")
+    assert parse_exit("", exits) is None
+    with pytest.raises(ValueError, match=r"unknown exit 'vpn2'.*home, tor"):
+        parse_exit("vpn2", exits)
+
+
+def test_resolve_exit_precedence() -> None:
+    assert resolve_exit("username", env=ENV).name == "home"  # RECCE_PROXY
+    assert resolve_exit("domain", env=ENV) == DIRECT_EXIT  # RECCE_DOMAIN_PROXY wins
+    assert resolve_exit("domain", "tor", env=ENV) == Exit("tor", TOR)  # --proxy wins
+    assert resolve_exit("email", env={}) == DIRECT_EXIT
+    assert resolve_fallback(env=ENV) == Exit("tor", TOR)
+    assert resolve_fallback("direct", env=ENV) == DIRECT_EXIT
+    assert resolve_fallback(env={}) is None
+
+
+def test_configured_exits_lists_what_uses_each_exit() -> None:
+    rows = [(use, exit_.label) for use, exit_ in configured_exits(ENV)]
+
+    assert rows == [
+        ("username", "home (socks5h://kit:***@10.0.0.2:1080)"),
+        ("email", "home (socks5h://kit:***@10.0.0.2:1080)"),
+        ("phone", "home (socks5h://kit:***@10.0.0.2:1080)"),
+        ("domain", "direct"),
+        ("username fallback", f"tor ({TOR})"),
+    ]
+
+
+# --- fallback retry ------------------------------------------------------------
+
+
+def _sites() -> list[dict]:
+    def site(name: str, host: str) -> dict:
+        return {
+            "name": name, "category": "social", "url": f"https://{host}/{{u}}",
+            "method": "status", "found": [200], "missing": [404],
+        }
+
+    return [site("Walled", "walled.test"), site("Open", "open.test"), site("Fortress", "fortress.test")]
+
+
+class SiteClient:
+    """Answers per host: 'block' → 403, 'know' → 200 for alice / 404 otherwise."""
+
+    def __init__(self, behaviour: dict[str, str], proxy: str | None = None) -> None:
+        self.behaviour = behaviour
+        self.proxy = proxy
+        self.timeout = 3.0
+        self.max_concurrency = 4
+        self.user_agent = "recce-test"
+        self.requests: list[str] = []
+        self.closed = False
+
+    async def request_detailed(self, method: str, url: str, **kwargs):  # type: ignore[no-untyped-def]
+        self.requests.append(url)
+        host = httpx.URL(url).host
+        mode = self.behaviour.get(host, "know")
+        code = 403 if mode == "block" else (200 if url.endswith("/alice") else 404)
+        return httpx.Response(code, text="", request=httpx.Request(method, url)), None
+
+    async def get(self, url: str, **kwargs):  # type: ignore[no-untyped-def]
+        resp, _ = await self.request_detailed("GET", url)
+        return resp
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_blocked_probes_are_retried_through_the_fallback_exit(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("RECCE_EXITS", f"tor={TOR}")
+    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False: _sites())
+    primary = SiteClient({"walled.test": "block", "fortress.test": "block"})
+    fallback = SiteClient({"fortress.test": "block"}, proxy=TOR)
+    monkeypatch.setattr(username_mod, "_client_for_exit", lambda client, exit_, browser: fallback)
+
+    report = await username_mod.search_username(
+        "alice", primary, show_progress=False, impersonate=False, per_domain_rate=0,
+        guarded_backoff_seconds=0, flagged_sites="off", attribute_hits=False,
+        fallback_exit=Exit("tor", TOR),
+    )
+
+    hits = {h.source: h for h in report.hits}
+    assert report.exit == "direct"
+    walled = hits["Walled"]
+    assert walled.status is Status.FOUND
+    assert walled.extra["exit"] == f"tor ({TOR})"
+    assert walled.extra["fallback"]["primary"] == "HTTP 403"
+    assert walled.summary.endswith(f"via tor ({TOR})")
+    # The made-up-username check ran through the exit that found the account.
+    assert walled.extra["canary"]["status"] == "not_found"
+    assert sum("walled.test" in u for u in fallback.requests) == 2
+    assert hits["Open"].status is Status.FOUND and "exit" not in hits["Open"].extra
+    fortress = hits["Fortress"]
+    assert fortress.status is Status.UNKNOWN
+    assert fortress.extra["fallback"]["status"] == "unknown"
+    assert "exit" not in fortress.extra
+    assert not any("open.test" in u for u in fallback.requests)
+    assert fallback.closed
+
+
+@pytest.mark.asyncio
+async def test_no_fallback_means_no_retry(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False: _sites())
+    primary = SiteClient({"walled.test": "block"}, proxy=TOR)
+    monkeypatch.setenv("RECCE_EXITS", f"tor={TOR}")
+
+    report = await username_mod.search_username(
+        "alice", primary, show_progress=False, impersonate=False, per_domain_rate=0,
+        guarded_backoff_seconds=0, flagged_sites="off", attribute_hits=False,
+    )
+
+    assert report.exit == f"tor ({TOR})"
+    walled = next(h for h in report.hits if h.source == "Walled")
+    assert walled.status is Status.UNKNOWN and "fallback" not in walled.extra
+
+
+# --- surfaces --------------------------------------------------------------------
+
+
+def test_cli_resolves_exits_and_shows_them(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    for key in list(ENV):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("RECCE_EXITS", f"tor={TOR}")
+    monkeypatch.setenv("RECCE_USERNAME_FALLBACK_PROXY", "tor")
+    seen: dict = {}
+
+    async def fake_username(name, client, **kwargs):  # type: ignore[no-untyped-def]
+        seen["proxy"] = client.proxy
+        seen["fallback"] = kwargs["fallback_exit"]
+        report = Report(query=name, query_type="username", exit=f"tor ({TOR})")
+        report.finish()
+        return report
+
+    monkeypatch.setattr("recce.cli.search_username", fake_username)
+
+    result = runner.invoke(app, ["username", "alice", "--proxy", "tor", "--no-providers"])
+
+    assert result.exit_code == 0, result.output
+    assert seen == {"proxy": TOR, "fallback": Exit("tor", TOR)}
+    assert f"exit: tor ({TOR})" in result.output
+    assert f"Exit: tor ({TOR})" in result.output
+
+    bad = runner.invoke(app, ["username", "alice", "--proxy", "nowhere"])
+    assert bad.exit_code == 2
+    assert "unknown exit 'nowhere'" in bad.output
+
+
+def test_doctor_lists_exits(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    for key, value in ENV.items():
+        monkeypatch.setenv(key, value)
+
+    result = runner.invoke(app, ["doctor", "--no-network"])
+
+    assert result.exit_code == 0, result.output
+    assert "Exits:" in result.output
+    assert "username fallback" in result.output
+    assert "s3cret" not in result.output
+
+
+def test_exit_is_in_investigation_exports(tmp_path: Path) -> None:
+    store = InvestigationStore(tmp_path / "recce.sqlite3")
+    inv = store.create_investigation(name="Exit")
+    report = Report(query="alice", query_type="username", exit=f"tor ({TOR})")
+    report.finish()
+    store.record_run(investigation_id=inv["id"], report=report, args={}, recce_version="t", wmn_cache={})
+
+    assert f"- Exit: tor ({TOR})" in store.export_markdown(inv["id"])

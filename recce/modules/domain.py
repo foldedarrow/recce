@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import tldextract
 
 from ..config import Settings
+from ..core.egress import exit_label
 from ..core.http import HttpClient
 from ..core.result import Hit, Report, Status
 from ..providers import query_registered_providers
@@ -74,7 +75,7 @@ async def search_domain(
     if bruteforce_wordlist not in BRUTEFORCE_WORDLIST_FILES:
         raise ValueError("bruteforce wordlist must be one of: small, medium, big")
 
-    report = Report(query=domain, query_type="domain")
+    report = Report(query=domain, query_type="domain", exit=exit_label(getattr(client, "proxy", None)))
     ctx = SourceContext(client=client, settings=settings, validate_subdomains=validate_subs)
     coros = [
         _run_source(category, source, domain, ctx)

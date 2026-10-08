@@ -13,6 +13,7 @@ import dns.asyncresolver
 import dns.exception
 
 from ..config import Settings
+from ..core.egress import exit_label
 from ..core.http import HttpClient
 from ..core.result import Hit, Report, Status
 from ..providers import query_registered_providers
@@ -172,7 +173,7 @@ async def search_email(
     if not EMAIL_RE.match(email):
         raise ValueError(f"'{email}' doesn't look like a valid email address.")
 
-    report = Report(query=email, query_type="email")
+    report = Report(query=email, query_type="email", exit=exit_label(getattr(client, "proxy", None)))
     coros = [
         _gravatar(email, client),
         _mx(email),

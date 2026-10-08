@@ -9,6 +9,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Egress control**: named exits (`RECCE_EXITS`), a per-module exit
+  (`RECCE_<MODULE>_PROXY`, `RECCE_PROXY`, `--proxy <url|name|direct>`), and a
+  username **fallback exit** (`--fallback-proxy`,
+  `RECCE_USERNAME_FALLBACK_PROXY`) that retries bot-walled probes
+  (401/403/429) and runs their canary check through the same exit. Every
+  report records its exit (CLI, GUI, JSON, investigation exports); fallback
+  answers are tagged per hit. `recce doctor` lists each exit and the public IP
+  it appears as. Proxy passwords are masked wherever exits are shown.
 - **Attribution clusters** for username searches: FOUND hits are linked by
   corroborating public data (same profile, cross-links, shared email, avatar
   perceptual hash, display name, location) and grouped into "likely the same

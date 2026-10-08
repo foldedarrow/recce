@@ -69,6 +69,7 @@ class Report(BaseModel):
     query: str
     query_type: str
     pivot: PivotOrigin | None = None
+    exit: str | None = None  # network exit the query left through (see core/egress.py)
     clusters: list[Cluster] = Field(default_factory=list)
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None

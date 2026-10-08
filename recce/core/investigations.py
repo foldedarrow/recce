@@ -543,6 +543,7 @@ class InvestigationStore:
                     "",
                     f"- Run at: {run['created_at']}",
                     f"- Recce version: {run['recce_version']}",
+                    f"- Exit: {report.get('exit') or 'not recorded'}",
                     f"- Sources checked: {len(found)}",
                     f"- Confirmed hits: {len(confirmed)}",
                 ]
@@ -621,6 +622,7 @@ class InvestigationStore:
             pdf.heading(f"{run['query_type']}: {run['query']}", level=3)
             pdf.text(f"Run at: {run['created_at']}")
             pdf.text(f"Recce version: {run['recce_version']}")
+            pdf.text(f"Exit: {report.get('exit') or 'not recorded'}")
             pdf.text(f"Sources checked: {len(hits)}")
             pdf.text(f"Confirmed hits: {len(confirmed)}")
             if report.get("pivot"):

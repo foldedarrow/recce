@@ -10,6 +10,7 @@ from phonenumbers import carrier, geocoder
 from phonenumbers import timezone as pn_timezone
 
 from ..config import Settings
+from ..core.egress import exit_label
 from ..core.http import HttpClient
 from ..core.result import Hit, Report, Status
 from ..providers import query_registered_providers
@@ -200,7 +201,7 @@ async def search_phone(
     deep: bool = False,
     deep_concurrency: int = 4,
 ) -> Report:
-    report = Report(query=phone, query_type="phone")
+    report = Report(query=phone, query_type="phone", exit=exit_label(getattr(client, "proxy", None)))
     parsed_hit = _parse(phone, default_region)
     report.add(parsed_hit)
 

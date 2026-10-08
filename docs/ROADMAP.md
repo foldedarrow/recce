@@ -66,11 +66,14 @@ pivoted reports (one person, several handles) are not merged yet.
 - Consider importing Maigret's site DB (MIT) as a third source — ~3,000 sites
   vs WMN's ~700 — gated behind the same canary verification.
 
-### 5. Egress control
-Most remaining 403s are IP reputation: the box exits via Proton Secure Core,
-which Cloudflare and others block. Options, per module: a configurable exit
-for username probes (e.g. the home connection, or a residential proxy), Tor
-for sites that allow it, and recording which exit produced each result.
+### 5. Egress control — shipped
+`recce/core/egress.py`: named exits, per-module exit selection, a username
+fallback exit that retries 401/403/429 probes (canary check through the same
+exit), the exit recorded on every report and fallback hit, and `doctor`
+showing each exit's public IP. The box has Tor as the fallback. Open: a
+home-connection or residential exit needs a proxy endpoint outside the VPN.
+Some sites block Tor as hard as VPNs, so per-site exit preferences
+(learned from selftest results) would be the next step.
 
 ### 6. More sources
 - **Email:** Microsoft consumer-account existence (the AAD `GetCredentialType`

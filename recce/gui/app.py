@@ -17,8 +17,10 @@ import streamlit as st
 
 from recce import __version__
 from recce.config import Settings, user_env_path, write_user_env
+from recce.core.egress import Exit, resolve_exit, resolve_fallback
 from recce.core.http import http_client
 from recce.core.investigations import InvestigationStore, delete_confirmation_matches
+from recce.core.output import fallback_note
 from recce.core.result import Report, Status
 from recce.licensing import has_pro_entitlement, pro_licence_path, write_pro_licence
 from recce.modules.attribution import uncorroborated_accounts
@@ -191,7 +193,19 @@ with st.sidebar:
         value=float(DEFAULT_PER_DOMAIN_RATE),
         step=0.5,
     )
-    runtime_proxy = st.text_input("Proxy", placeholder="socks5://127.0.0.1:9050")
+    runtime_proxy = st.text_input(
+        "Exit (proxy)",
+        placeholder=f"configured: {resolve_exit('username').label}",
+        help="Proxy URL (socks5h://, http://), an exit name from RECCE_EXITS, or 'direct'. "
+        "Blank uses each mode's configured exit (RECCE_<MODE>_PROXY, then RECCE_PROXY).",
+    ).strip()
+    configured_fallback = resolve_fallback()
+    runtime_fallback = st.text_input(
+        "Username fallback exit",
+        placeholder=f"configured: {configured_fallback.label}" if configured_fallback else "e.g. tor",
+        help="Username probes bot-walled on the main exit (HTTP 401/403/429) are retried "
+        "through this exit. Blank uses RECCE_USERNAME_FALLBACK_PROXY.",
+    ).strip()
 
     if st.button("Refresh WMN data", use_container_width=True):
         from recce.modules.username import refresh_wmn_data
@@ -286,6 +300,20 @@ def report_to_df(report: Report) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _gui_exit(module: str) -> Exit:
+    """The sidebar's exit override, else the module's configured exit."""
+    return resolve_exit(module, runtime_proxy or None)
+
+
+def _gui_fallback() -> Exit | None:
+    return resolve_fallback(runtime_fallback or None)
+
+
+def _gui_fallback_label() -> str | None:
+    fallback = _gui_fallback()
+    return fallback.label if fallback else None
+
+
 def active_investigation() -> dict[str, Any] | None:
     inv_id = st.session_state.get("active_investigation_id")
     if not inv_id:
@@ -328,7 +356,7 @@ async def rerun_saved_query(run: dict[str, Any]) -> Report:
     args = run["args"]
     timeout = float(args.get("timeout", runtime_timeout))
     max_concurrency = int(args.get("request_concurrency", runtime_concurrency))
-    proxy = runtime_proxy.strip() or None
+    proxy = _gui_exit(run["query_type"]).proxy
     query = run["query"]
 
     async with http_client(
@@ -347,6 +375,7 @@ async def rerun_saved_query(run: dict[str, Any]) -> Report:
                 per_domain_rate=float(args.get("per_domain_rate") or DEFAULT_PER_DOMAIN_RATE),
                 show_progress=False,
                 settings=settings,
+                fallback_exit=_gui_fallback(),
             )
         if run["query_type"] == "email":
             report = await search_email(query, client, settings)
@@ -509,6 +538,8 @@ def render_results(report: Report, *, show_misses: bool, show_errors: bool) -> N
     c2.metric("Hits", len(found), delta=None)
     c3.metric("Errors", len(errors))
     c4.metric("Elapsed", _elapsed_str(report))
+    if report.exit:
+        st.caption(f"Exit: {report.exit}{fallback_note(report)}")
 
     render_clusters(report)
 
@@ -530,9 +561,9 @@ def render_results(report: Report, *, show_misses: bool, show_errors: bool) -> N
         st.info("No confirmed hits. Try toggling 'Show misses' or 'Show errors' below for the full audit.")
 
     df = report_to_df(report)
-    if not show_misses:
+    if not show_misses and not df.empty:
         df = df[df["Status"] != Status.NOT_FOUND.value]
-    if not show_errors:
+    if not show_errors and not df.empty:
         df = df[df["Status"] != Status.ERROR.value]
 
     if not df.empty:
@@ -936,7 +967,7 @@ def _username_mode() -> None:
                     user_agent=settings.user_agent,
                     timeout=runtime_timeout,
                     max_concurrency=int(runtime_concurrency),
-                    proxy=runtime_proxy.strip() or None,
+                    proxy=_gui_exit("username").proxy,
                 ) as client:
                     return await search_username(
                         query, client,
@@ -946,6 +977,7 @@ def _username_mode() -> None:
                         per_domain_rate=float(runtime_per_domain_rate),
                         show_progress=False,
                         settings=settings,
+                        fallback_exit=_gui_fallback(),
                     )
 
             try:
@@ -967,7 +999,7 @@ def _username_mode() -> None:
                         "timeout": runtime_timeout,
                         "request_concurrency": int(runtime_concurrency),
                         "per_domain_rate": float(runtime_per_domain_rate),
-                        "proxy": bool(runtime_proxy.strip()),
+                        "exit": _gui_exit("username").label, "fallback_exit": _gui_fallback_label(),
                     },
                 )
             except ValueError as e:
@@ -1033,7 +1065,7 @@ def _email_mode() -> None:
                     user_agent=settings.user_agent,
                     timeout=runtime_timeout,
                     max_concurrency=int(runtime_concurrency),
-                    proxy=runtime_proxy.strip() or None,
+                    proxy=_gui_exit("email").proxy,
                 ) as client:
                     r = await search_email(query, client, settings)
                 if deep:
@@ -1041,7 +1073,7 @@ def _email_mode() -> None:
                         query,
                         timeout=runtime_timeout,
                         max_concurrency=int(deep_concurrency),
-                        proxy=runtime_proxy.strip() or None,
+                        proxy=_gui_exit("email").proxy,
                         retry=deep_retry,
                         show_progress=False,
                     ):
@@ -1068,7 +1100,7 @@ def _email_mode() -> None:
                         "deep_retry": deep_retry,
                         "timeout": runtime_timeout,
                         "request_concurrency": int(runtime_concurrency),
-                        "proxy": bool(runtime_proxy.strip()),
+                        "exit": _gui_exit("email").label,
                     },
                 )
             except ValueError as e:
@@ -1133,7 +1165,7 @@ def _phone_mode() -> None:
                     user_agent=settings.user_agent,
                     timeout=runtime_timeout,
                     max_concurrency=int(runtime_concurrency),
-                    proxy=runtime_proxy.strip() or None,
+                    proxy=_gui_exit("phone").proxy,
                 ) as client:
                     return await search_phone(
                         target.strip(),
@@ -1159,7 +1191,7 @@ def _phone_mode() -> None:
                         "deep_concurrency": int(deep_concurrency),
                         "timeout": runtime_timeout,
                         "request_concurrency": int(runtime_concurrency),
-                        "proxy": bool(runtime_proxy.strip()),
+                        "exit": _gui_exit("phone").label,
                     },
                 )
             except Exception as e:
@@ -1226,7 +1258,7 @@ def _domain_mode() -> None:
                     user_agent=settings.user_agent,
                     timeout=runtime_timeout,
                     max_concurrency=int(runtime_concurrency),
-                    proxy=runtime_proxy.strip() or None,
+                    proxy=_gui_exit("domain").proxy,
                 ) as client:
                     return await search_domain(
                         target.strip(),
@@ -1261,7 +1293,7 @@ def _domain_mode() -> None:
                         "bruteforce_rate": int(brute_rate),
                         "timeout": runtime_timeout,
                         "request_concurrency": int(runtime_concurrency),
-                        "proxy": bool(runtime_proxy.strip()),
+                        "exit": _gui_exit("domain").label,
                     },
                 )
             except ValueError as e:

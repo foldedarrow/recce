@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__
+from ..core.egress import egress_info
 from ..core.http import HttpClient, ImpersonatingClient, impersonation_available
 from ..core.result import Hit, Status
 from .username import (
@@ -67,7 +68,6 @@ MAX_KNOWN_TRIES = 2
 FLAGGED_POLICIES = ("skip", "mark", "off")
 FLAGGED_ENV = "RECCE_FLAGGED_SITES"
 
-EGRESS_SOURCES = ("https://ipinfo.io/json", "https://api.ipify.org?format=json")
 
 
 # ---------------------------------------------------------------------------
@@ -150,25 +150,6 @@ def select_sites(
             site = {**site, "known": wmn_known[site["name"].lower()]}
         out.append(site)
     return out
-
-
-async def egress_info(client: Any) -> dict[str, Any]:
-    """Where probes appear to come from. Blocks depend on it (VPN exits are
-    often on bot-wall deny lists), so every report records it."""
-    for url in EGRESS_SOURCES:
-        try:
-            resp = await client.get(url)
-        except Exception:
-            continue
-        if resp is None or resp.status_code != 200:
-            continue
-        try:
-            data = resp.json()
-        except ValueError:
-            continue
-        if data.get("ip"):
-            return {k: data[k] for k in ("ip", "country", "org") if data.get(k)}
-    return {"ip": None}
 
 
 async def check_site_health(

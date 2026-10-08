@@ -30,6 +30,7 @@ class HttpClient:
         self.timeout = timeout
         self.max_concurrency = max_concurrency
         self.proxy = proxy
+        self.user_agent = user_agent
         client_kwargs: dict[str, Any] = dict(
             timeout=httpx.Timeout(timeout, connect=min(timeout, 6.0)),
             headers={
