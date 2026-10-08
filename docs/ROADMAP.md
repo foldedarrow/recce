@@ -80,9 +80,11 @@ format), reverse IP (HackerTarget), Wayback key pages, and Wayback profile
 snapshots for usernames (`recce/modules/archive.py` holds the shared CDX
 client). Still open, below.
 
-- **Email:** Microsoft consumer-account existence (the AAD `GetCredentialType`
-  endpoint is unreliable for outlook.com — needs a different approach);
-  keyed providers for DeHashed / Intelligence X / Snusbase (summaries only,
+- **Email:** Microsoft account existence — **shipped**
+  (`recce/modules/microsoft_account.py`, deep mode): the consumer sign-in
+  page's own username step (`login.live.com/GetCredentialType.srf`) with every
+  owner-contacting option off. Works for any domain, reports personal vs
+  work/school accounts and sign-in methods. Keyed providers for DeHashed / Intelligence X / Snusbase (summaries only,
   never secrets). Deep mode — **replaced**: holehe was audited on
   2026-10-08 ([docs/HOLEHE_AUDIT.md](HOLEHE_AUDIT.md), 4 proven sites),
   then [user-scanner](https://github.com/kaifcodec/user-scanner) 1.5.2.1

@@ -7,7 +7,10 @@ targeted traffic or queries against a subject.
 
 `recce email --deep` sends live sign-up and sign-in lookups to about 115 third-party services.
 Modules that could notify the address owner are never run (see
-[USER_SCANNER_AUDIT.md](USER_SCANNER_AUDIT.md)).
+[USER_SCANNER_AUDIT.md](USER_SCANNER_AUDIT.md)). recce's own Microsoft-account
+check runs only the sign-in page's username step, with Authenticator push,
+security-key and one-time-code options switched off, so nothing is sent to
+the account owner.
 Use it only for email addresses you own or where you have explicit authority.
 The CLI requires `--i-own-these-emails`.
 

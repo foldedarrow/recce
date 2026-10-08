@@ -9,6 +9,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Deep email mode checks whether an address is a **Microsoft account** (any
+  domain) via the consumer sign-in page's username step, reporting personal vs
+  work/school and the sign-in methods (password, phone, Authenticator, security
+  key, linked Google/Apple/GitHub/LinkedIn). Push and one-time-code options are
+  off, so the owner is never contacted.
 - `RECCE_DEEP_EXITS` pins individual `email --deep` checks to a network exit
   (`alza.*=home`; glob rules, first match wins), including their made-up-address
   recheck. Pinned hits record the exit; `doctor` lists the rules.
