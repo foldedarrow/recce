@@ -265,8 +265,10 @@ def _findings_section(runs: list[dict], found_by_run: dict[str, list[dict]]) -> 
 
 
 def _finding_row(hit: dict) -> str:
+    from ..modules.attribution import cluster_attribution
+
     extra = hit.get("extra") or {}
-    attribution = extra.get("attribution") or {}
+    attribution = cluster_attribution(extra) or {}
     if attribution.get("cluster") is not None:
         attr = f"<span class=\"badge\">cluster {attribution['cluster']}</span>"
     elif attribution:

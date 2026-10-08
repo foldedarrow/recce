@@ -174,6 +174,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Phone lookups crashed the GUI (`AttributeError: 'str' object has no attribute
+  'get'`), and could crash the CLI clusters panel and the HTML dossier: Ofcom
+  hits stored their licence credit under `extra["attribution"]`, the key that
+  holds identity-cluster data. It is now `extra["data_attribution"]`, and
+  cluster readers ignore anything that isn't cluster data, so phone runs saved
+  before the fix still render.
+
 - Subdomain DNS validation resolves concurrently instead of one name at a time
   (thousands of names previously took hours).
 - Technology detection no longer flags React/Vue on ordinary words ("reaction",

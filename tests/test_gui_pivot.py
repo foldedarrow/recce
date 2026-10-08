@@ -81,3 +81,35 @@ def test_gui_follow_up_buttons_chain_searches_without_deep(monkeypatch, tmp_path
         ("root@example.test", "root"),
         ("root", "c@example.test"),
     ]
+
+
+def test_gui_phone_results_render_with_ofcom_licence_credit(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Ofcom hits saved before the key rename carry their licence credit (a
+    string) under extra["attribution"], the key clustering uses for a dict."""
+    monkeypatch.setenv("RECCE_DATA_DIR", str(tmp_path))
+
+    async def fake_phone(number, client, settings, **kwargs):  # type: ignore[no-untyped-def]
+        report = Report(query=number, query_type="phone")
+        report.add(Hit(source="libphonenumber", category="format", status=Status.FOUND, summary="E.164"))
+        report.add(
+            Hit(
+                source="Ofcom numbering",
+                category="carrier",
+                status=Status.FOUND,
+                extra={"attribution": "Contains Ofcom data"},
+            )
+        )
+        report.finish()
+        return report
+
+    monkeypatch.setattr("recce.modules.phone.search_phone", fake_phone)
+
+    at = AppTest.from_file(APP, default_timeout=30)
+    at.run()
+    at.sidebar.radio(key="mode").set_value("Phone").run()
+    at.text_input(key="p_target").input("+447700900123")
+    next(b for b in at.button if b.label == "Run").click()
+    at.run()
+
+    assert not at.exception
+    assert at.session_state["p_report"].query == "+447700900123"

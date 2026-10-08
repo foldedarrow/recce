@@ -292,3 +292,25 @@ def test_cli_prints_clusters(monkeypatch) -> None:  # type: ignore[no-untyped-de
     assert "Likely the same person" in result.output
     assert "Cluster 1" in result.output
     assert "1 other account(s) match on the username only" in result.output
+
+
+def test_non_dict_attribution_is_not_a_cluster_annotation() -> None:
+    from recce.core.dossier import _finding_row
+    from recce.core.output import render_clusters
+    from recce.modules.attribution import cluster_attribution, uncorroborated_accounts
+
+    report = Report(query="+447700900123", query_type="phone")
+    report.add(
+        Hit(
+            source="Ofcom numbering",
+            category="carrier",
+            status=Status.FOUND,
+            extra={"attribution": "Contains Ofcom data"},
+        )
+    )
+
+    assert cluster_attribution(report.hits[0].extra) is None
+    assert cluster_attribution({"attribution": {"cluster": 1}}) == {"cluster": 1}
+    assert uncorroborated_accounts(report) == 0
+    render_clusters(report)  # no clusters panel, and no crash
+    assert "cluster" not in _finding_row(report.hits[0].model_dump(mode="json"))

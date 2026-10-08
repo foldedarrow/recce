@@ -104,6 +104,9 @@ def test_hit_labels_original_allocation(index: ofcom.NumberingIndex) -> None:
     assert hit.extra["originally_allocated_to"] == "Example Telecom Ltd"
     assert hit.extra["block_status"] == "Allocated"
     assert hit.extra["data_published"] == "2026-10-07"
+    # Not "attribution": that key holds identity-cluster dicts.
+    assert "Ofcom" in hit.extra["data_attribution"]
+    assert "attribution" not in hit.extra
 
 
 def test_hit_for_unallocated_block(index: ofcom.NumberingIndex) -> None:

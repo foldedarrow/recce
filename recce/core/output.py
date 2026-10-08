@@ -257,9 +257,9 @@ def render_pivot_chain(run) -> None:  # type: ignore[no-untyped-def]
 
 def render_clusters(report: Report) -> None:
     """Which FOUND hits look like the same person, and why."""
-    from ..modules.attribution import uncorroborated_accounts
+    from ..modules.attribution import cluster_attribution, uncorroborated_accounts
 
-    if not any("attribution" in h.extra for h in report.found):
+    if not any(cluster_attribution(h.extra) for h in report.found):
         return  # not a username report, or attribution was skipped
     parts: list[Text] = []
     for cluster in report.clusters:
