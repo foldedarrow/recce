@@ -579,7 +579,7 @@ def _client_for_exit(client: Any, exit_: Exit, *, browser: bool) -> Any:
     """A client like `client` that leaves through `exit_`."""
     if browser:
         return ImpersonatingClient(
-            timeout=client.timeout, max_concurrency=client.max_concurrency, proxy=exit_.proxy
+            timeout=client.timeout, max_concurrency=client.max_concurrency, proxy=exit_.proxy, ipv4=exit_.ipv4
         )
     return HttpClient(
         user_agent=client.user_agent,

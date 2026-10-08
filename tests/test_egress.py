@@ -264,3 +264,33 @@ async def test_fallback_chain_retries_only_what_earlier_exits_left_blocked(monke
     assert tor.closed and home.closed
     note = fallback_note(report)
     assert f"1 via tor ({TOR})" in note and f"1 via home ({home_url})" in note and "0 still blocked" in note
+
+
+def test_ipv4_exits_flag_named_exits() -> None:
+    env = {**ENV, "RECCE_IPV4_EXITS": "home", "RECCE_USERNAME_FALLBACK_PROXY": "tor,home"}
+    tor, home = resolve_fallback(env=env).exits  # type: ignore[union-attr]
+
+    assert (tor.ipv4, home.ipv4) == (False, True)
+    assert resolve_exit("username", env=env).ipv4 is True  # RECCE_PROXY=home
+    assert resolve_fallback("tor", env=env) == Exit("tor", TOR)
+
+
+def test_impersonating_client_forces_ipv4_resolution(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import curl_cffi.requests as cffi_requests
+
+    from recce.core.http import ImpersonatingClient
+
+    seen: dict = {}
+
+    class FakeSession:
+        def __init__(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            seen.update(kwargs)
+
+    monkeypatch.setattr(cffi_requests, "AsyncSession", FakeSession)
+
+    ImpersonatingClient(proxy="socks5://127.0.0.1:1080", ipv4=True)
+    assert list(seen["curl_options"].values()) == [1]  # CURL_IPRESOLVE_V4
+
+    seen.clear()
+    ImpersonatingClient(proxy="socks5://127.0.0.1:1080")
+    assert seen["curl_options"] is None
