@@ -791,7 +791,7 @@ def _api_keys_mode() -> None:
             "- EmailRep works without a key but benefits from higher rate limits when configured.\n"
             "- NumVerify's free tier is HTTP-only and limited; recce warns rather than blocking it.\n"
             "- Shodan is a live Pro-gated provider for domain DNS intelligence; its DNS API needs a "
-            "paid Shodan Membership (free keys are reported as lacking access).\n"
+            "paid Shodan Membership; free keys fall back to host lookups for the IPs the plan allows.\n"
             "- Censys is a live Pro-gated provider: host services and TLS certificate lookups via a "
             "Platform personal access token. Leave the organization ID blank on the free tier.\n"
             "- VirusTotal and SecurityTrails remain Pro-gated placeholders for future live enrichment."
