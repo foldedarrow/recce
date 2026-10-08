@@ -10,6 +10,7 @@ from recce.core.http import HttpClient
 from recce.core.result import Hit, Status
 
 from .base import Provider, ProviderContext, ProviderStatus, append_provider_gate_hits
+from .censys import CensysProvider
 from .emailrep import EmailRepProvider
 from .hibp import HIBPProvider
 from .hunter import HunterProvider
@@ -54,16 +55,7 @@ PROVIDERS: tuple[Provider, ...] = (
         homepage="https://securitytrails.com/corp/api",
         notes="passive DNS and subdomain enrichment",
     ),
-    Provider(
-        id="censys",
-        name="Censys",
-        tier="pro",
-        enriches=("domain",),
-        config_keys=("CENSYS_API_ID", "CENSYS_API_SECRET"),
-        setting_attrs=("censys_api_id", "censys_api_secret"),
-        homepage="https://search.censys.io/api",
-        notes="host and certificate enrichment",
-    ),
+    CensysProvider(),
 )
 
 

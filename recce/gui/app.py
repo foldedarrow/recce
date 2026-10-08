@@ -754,8 +754,8 @@ def _api_keys_mode() -> None:
         ("SHODAN_API_KEY", "Shodan", settings.shodan_api_key),
         ("VIRUSTOTAL_API_KEY", "VirusTotal", settings.virustotal_api_key),
         ("SECURITYTRAILS_API_KEY", "SecurityTrails", settings.securitytrails_api_key),
-        ("CENSYS_API_ID", "Censys API ID", settings.censys_api_id),
-        ("CENSYS_API_SECRET", "Censys API Secret", settings.censys_api_secret),
+        ("CENSYS_API_TOKEN", "Censys personal access token", settings.censys_api_token),
+        ("CENSYS_ORG_ID", "Censys organization ID (paid plans only)", settings.censys_org_id),
     ]
 
     with st.form("api_keys_form"):
@@ -790,8 +790,11 @@ def _api_keys_mode() -> None:
         st.markdown(
             "- EmailRep works without a key but benefits from higher rate limits when configured.\n"
             "- NumVerify's free tier is HTTP-only and limited; recce warns rather than blocking it.\n"
-            "- Shodan is a live Pro-gated provider for domain DNS intelligence. VirusTotal, "
-            "SecurityTrails, and Censys remain Pro-gated placeholders for future live enrichment."
+            "- Shodan is a live Pro-gated provider for domain DNS intelligence; its DNS API needs a "
+            "paid Shodan Membership (free keys are reported as lacking access).\n"
+            "- Censys is a live Pro-gated provider: host services and TLS certificate lookups via a "
+            "Platform personal access token. Leave the organization ID blank on the free tier.\n"
+            "- VirusTotal and SecurityTrails remain Pro-gated placeholders for future live enrichment."
         )
 
 

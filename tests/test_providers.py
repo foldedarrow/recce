@@ -32,8 +32,6 @@ def _settings(**overrides) -> Settings:  # type: ignore[no-untyped-def]
         "shodan_api_key": None,
         "virustotal_api_key": None,
         "securitytrails_api_key": None,
-        "censys_api_id": None,
-        "censys_api_secret": None,
         "user_agent": "recce-test",
         "timeout": 3.0,
         "max_concurrency": 2,
@@ -257,7 +255,7 @@ async def test_hunter_domain_pivots_remain_non_queryable_until_implemented() -> 
         "domain",
         client,  # type: ignore[arg-type]
         _settings(hunter_api_key="hunter-key"),
-        skip_provider_ids={"shodan"},
+        skip_provider_ids={"shodan", "censys"},
     )
 
     assert hits == []
@@ -533,3 +531,152 @@ def test_append_registry_gate_hits_does_not_duplicate_provider_gate(monkeypatch)
 
     shodan_hits = [hit for hit in report.hits if hit.source == "Shodan"]
     assert len(shodan_hits) == 1
+
+
+@pytest.mark.asyncio
+async def test_shodan_free_plan_403_reports_plan_not_bad_key(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-pro")
+    client = DummyClient(DummyResponse(403, {"error": "Requires membership or higher to access"}))
+
+    hits = await query_registered_providers(
+        "example.com",
+        "domain",
+        client,  # type: ignore[arg-type]
+        _settings(shodan_api_key="shodan-key"),
+    )
+
+    shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
+    assert len(shodan_hits) == 1
+    assert shodan_hits[0].status is Status.SKIPPED
+    assert "key is valid" in (shodan_hits[0].summary or "")
+    assert "Membership" in (shodan_hits[0].summary or "")
+
+
+@pytest.mark.asyncio
+async def test_shodan_401_reports_invalid_key(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-pro")
+    client = DummyClient(DummyResponse(401, {"error": "Invalid API key"}))
+
+    hits = await query_registered_providers(
+        "example.com",
+        "domain",
+        client,  # type: ignore[arg-type]
+        _settings(shodan_api_key="shodan-key"),
+    )
+
+    shodan_hits = [hit for hit in hits if hit.source == "Shodan"]
+    assert shodan_hits[0].status is Status.ERROR
+    assert shodan_hits[0].error == "invalid API key"
+
+
+class RoutingClient:
+    def __init__(self, routes: dict[str, DummyResponse]) -> None:
+        self.routes = routes
+        self.requests: list[tuple[str, dict]] = []
+
+    async def get(self, url: str, **kwargs):  # type: ignore[no-untyped-def]
+        self.requests.append((url, kwargs))
+        for suffix, response in self.routes.items():
+            if url.endswith(suffix):
+                return response
+        return DummyResponse(404, {})
+
+
+def _fake_dns(records: dict[str, list[str]]):  # type: ignore[no-untyped-def]
+    async def lookup(name: str, rtype: str) -> tuple[list[str], str | None]:
+        del name
+        return records.get(rtype, []), None
+
+    return lookup
+
+
+@pytest.mark.asyncio
+async def test_censys_provider_reports_hosts_and_cert(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import recce.modules.domain_sources.common as common
+
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-pro")
+    monkeypatch.setattr(common, "dns_lookup", _fake_dns({"A": ["93.184.216.34", "10.0.0.5"]}))
+    host = {
+        "result": {
+            "resource": {
+                "ip": "93.184.216.34",
+                "autonomous_system": {"asn": 15133, "name": "EDGECAST"},
+                "location": {"country_code": "US"},
+                "services": [
+                    {"port": 443, "protocol": "HTTP", "transport_protocol": "tcp"},
+                    {"port": 443, "protocol": "UNKNOWN", "transport_protocol": "quic"},
+                ],
+            }
+        }
+    }
+    web = {
+        "result": {
+            "resource": {
+                "cert": {
+                    "fingerprint_sha256": "abc",
+                    "names": ["example.com", "www.example.com"],
+                    "parsed": {
+                        "subject_dn": "C=US, O=Example, CN=www.example.com",
+                        "issuer_dn": "C=US, O=DigiCert Inc, CN=DigiCert TLS",
+                        "validity_period": {"not_after": "2027-01-15T23:59:59Z"},
+                    },
+                }
+            }
+        }
+    }
+    client = RoutingClient(
+        {"/host/93.184.216.34": DummyResponse(200, host), "/webproperty/example.com:443": DummyResponse(200, web)}
+    )
+
+    hits = await query_registered_providers(
+        "example.com",
+        "domain",
+        client,  # type: ignore[arg-type]
+        _settings(censys_api_token="censys_tok"),
+        skip_provider_ids={"shodan"},
+    )
+
+    censys_hits = [hit for hit in hits if hit.source == "Censys"]
+    assert [hit.status for hit in censys_hits] == [Status.FOUND, Status.FOUND]
+    host_hit, cert_hit = censys_hits
+    assert "AS15133 EDGECAST" in (host_hit.summary or "")
+    assert "443/HTTP" in (host_hit.summary or "")
+    assert "443/UNKNOWN (quic)" in (host_hit.summary or "")
+    assert "issuer: DigiCert Inc" in (cert_hit.summary or "")
+    assert "expires 2027-01-15" in (cert_hit.summary or "")
+    # private IPs are never sent to Censys; token goes in a bearer header, no org ID by default
+    urls = [url for url, _ in client.requests]
+    assert not any("10.0.0.5" in url for url in urls)
+    headers = client.requests[0][1]["headers"]
+    assert headers["Authorization"] == "Bearer censys_tok"
+    assert "X-Organization-ID" not in headers
+
+
+@pytest.mark.asyncio
+async def test_censys_provider_reports_inactive_token(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import recce.modules.domain_sources.common as common
+
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-pro")
+    monkeypatch.setattr(common, "dns_lookup", _fake_dns({"A": ["93.184.216.34"]}))
+    client = DummyClient(DummyResponse(401, {"error": {"code": 401, "reason": "Access token is not active"}}))
+
+    hits = await query_registered_providers(
+        "example.com",
+        "domain",
+        client,  # type: ignore[arg-type]
+        _settings(censys_api_token="censys_bad", censys_org_id="org-uuid"),
+        skip_provider_ids={"shodan"},
+    )
+
+    censys_hits = [hit for hit in hits if hit.source == "Censys"]
+    assert censys_hits and all(hit.status is Status.ERROR for hit in censys_hits)
+    assert censys_hits[0].error == "invalid or inactive API token"
+    assert client.requests[0][1]["headers"]["X-Organization-ID"] == "org-uuid"
+
+
+def test_censys_provider_needs_token_only(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-pro")
+
+    rows = {row["id"]: row for row in provider_status_rows(_settings(censys_api_token="censys_tok"))}
+
+    assert rows["censys"]["status"] == "active"

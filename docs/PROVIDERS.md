@@ -26,10 +26,10 @@ permissions where the host platform supports POSIX file modes.
 | NumVerify | Free | Phone | `NUMVERIFY_API_KEY` | Provider-native live query |
 | Vonage Number Insight | Pro | Phone | `VONAGE_API_KEY`, `VONAGE_API_SECRET` | Provider-native live HLR: ported status, current/original carrier, reachability, roaming |
 | EmailRep | Free | Email | `EMAILREP_API_KEY` | Provider-native live query; key optional |
-| Shodan | Pro | Domain | `SHODAN_API_KEY` | Provider-native live query; Recce Pro gated |
+| Shodan | Pro | Domain | `SHODAN_API_KEY` | Provider-native live query; Recce Pro gated; DNS API needs a paid Shodan Membership (free keys report "lacks DNS API access") |
 | VirusTotal | Pro | Domain, Email | `VIRUSTOTAL_API_KEY` | Gated, query implementation planned |
 | SecurityTrails | Pro | Domain | `SECURITYTRAILS_API_KEY` | Gated, query implementation planned |
-| Censys | Pro | Domain | `CENSYS_API_ID`, `CENSYS_API_SECRET` | Gated, query implementation planned |
+| Censys | Pro | Domain | `CENSYS_API_TOKEN`, optional `CENSYS_ORG_ID` | Provider-native live query (Platform v3): services on the domain's public IPs + TLS cert on :443; free-tier tokens work without an org ID |
 
 ## Recce Pro Entitlement
 
