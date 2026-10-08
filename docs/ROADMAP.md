@@ -65,8 +65,12 @@ not yet a link signal; only corroborating profile data is.
   to skip false-positive sites (`--flagged-sites skip|mark|off`).
 - Shipped: weekly `recce-selftest.timer` after the WMN refresh; the journal
   shows changes since the previous run.
-- Next: alerting on new breakage (the diff is in `selftest.json` → `changes`);
-  more `known` accounts for WMN sites whose only one has gone.
+- Shipped: ntfy alerting. After a saved `recce selftest` run (the weekly timer
+  included), `RECCE_NTFY_URL` gets a push when a site newly turns
+  `false_positive`/`false_negative`, or when `blocked` jumps by 20% (min 10),
+  which usually means the exit IP lost reputation. `error`/`blocked` flips
+  alone never alert (they flap with the IP). `--no-notify` turns it off.
+- Next: more `known` accounts for WMN sites whose only one has gone.
 - Consider importing Maigret's site DB (MIT) as a third source — ~3,000 sites
   vs WMN's ~700 — gated behind the same canary verification.
 

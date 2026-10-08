@@ -158,3 +158,69 @@ def test_ntfy_config_and_send(monkeypatch) -> None:  # type: ignore[no-untyped-d
 
     assert sent["url"] == "https://ntfy.example/topic"
     assert sent["headers"]["Title"] == "t" and sent["headers"]["Authorization"] == "Bearer tk"
+
+
+# --- site-health alerts ----------------------------------------------------------
+
+
+def test_health_alert_names_newly_broken_sites() -> None:
+    from recce.notify import build_health_alert
+
+    changes = [
+        {"site": "Kaggle", "from": "healthy", "to": "false_negative"},
+        {"site": "Medium", "from": "blocked", "to": "false_positive"},
+        {"site": "Old", "from": "false_positive", "to": "false_positive"},  # unchanged: not a change
+        {"site": "Flaky", "from": "healthy", "to": "error"},
+        {"site": "Walled", "from": "healthy", "to": "blocked"},
+        {"site": "Fresh", "from": None, "to": "false_positive"},  # first sighting
+    ]
+    title, body = build_health_alert(changes, {"blocked": 90}, {"blocked": 91})
+    assert title == "recce: 2 site definitions broke"
+    assert "Kaggle: healthy -> false_negative" in body and "Medium: blocked -> false_positive" in body
+    assert "Flaky" not in body and "Walled" not in body and "Fresh" not in body
+
+
+def test_health_alert_flags_a_burned_exit_and_ignores_noise() -> None:
+    from recce.notify import build_health_alert
+
+    title, body = build_health_alert([], {"blocked": 90}, {"blocked": 140})
+    assert "exit walled more" in title and "from 90 to 140" in body
+    assert build_health_alert([], {"blocked": 90}, {"blocked": 100}) is None  # under 20%
+    assert build_health_alert([], {"blocked": 5}, {"blocked": 12}) is None  # under the minimum
+    assert build_health_alert([{"site": "X", "from": "healthy", "to": "error"}], {"blocked": 5}, {"blocked": 5}) is None
+    # No earlier run: nothing to compare against.
+    assert build_health_alert([{"site": "X", "from": "healthy", "to": "false_positive"}], None, {"blocked": 1}) is None
+
+
+def test_selftest_sends_a_health_alert_only_when_something_broke(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from typer.testing import CliRunner
+
+    from recce.cli import app
+    from recce.modules import selftest
+
+    monkeypatch.setattr(selftest, "SELFTEST_PATH", tmp_path / "selftest.json")
+    monkeypatch.setattr("recce.modules.selftest.SELFTEST_PATH", tmp_path / "selftest.json")
+    monkeypatch.setenv("RECCE_NTFY_URL", "https://ntfy.example/topic")
+    sent: list[tuple] = []
+    monkeypatch.setattr("recce.notify.send", lambda config, title, body, **kw: sent.append((title, body)))
+    site = {"name": "Kaggle", "category": "dev", "url": "https://k.test/{u}", "method": "status",
+            "found": [200], "missing": [404], "known": ["a"]}
+    monkeypatch.setattr("recce.cli.select_sites", lambda **kw: [site])
+    verdicts = iter(["healthy", "healthy", "false_negative"])
+
+    async def fake_run(client, sites, **kw):  # type: ignore[no-untyped-def]
+        status = next(verdicts)
+        results = {"Kaggle": {"status": status, "detail": "", "category": "dev", "fingerprint": "x",
+                              "known": None, "canary": None, "checked_at": "2026-10-08T00:00:00+00:00"}}
+        return {"version": 1, "recce_version": "t", "ran_at": "2026-10-08T00:00:00+00:00", "duration_s": 0,
+                "egress": {}, "impersonate": False, "canary": "c", "summary": selftest.summarise(results),
+                "sites": results}
+
+    monkeypatch.setattr("recce.cli.run_selftest", fake_run)
+    runner = CliRunner()
+    for _ in range(2):  # first run: no earlier state; second: still healthy
+        assert runner.invoke(app, ["selftest", "--no-exits"]).exit_code == 0
+    assert sent == []
+    result = runner.invoke(app, ["selftest", "--no-exits"])
+    assert result.exit_code == 0, result.output
+    assert len(sent) == 1 and "Kaggle: healthy -> false_negative" in sent[0][1]

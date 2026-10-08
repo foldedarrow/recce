@@ -961,6 +961,10 @@ def cmd_selftest(
         DEFAULT_PER_DOMAIN_RATE, "--per-domain-rate", min=0.0,
         help="Max probes per second to the same domain. Use 0 to disable.",
     ),
+    notify: bool = typer.Option(
+        True, "--notify/--no-notify",
+        help="Send an ntfy alert (RECCE_NTFY_URL) when sites newly break or the exit gets walled more.",
+    ),
     exits: bool = typer.Option(
         True, "--exits/--no-exits",
         help="Also probe blocked sites through the fallback exits (--fallback-proxy / "
@@ -1008,11 +1012,32 @@ def cmd_selftest(
                 )
 
     report = asyncio.run(run())
+    earlier = last_run_summary()
     changes = save_report(report) if save else []
     if json_output:
         print(json.dumps({**report, "changes": changes}, indent=1))
+    else:
+        _render_selftest(report, changes, show_all=show_all, saved=save)
+    if save and notify:
+        _alert_site_health(changes, earlier, last_run_summary(), quiet=json_output)
+
+
+def _alert_site_health(changes: list[dict], earlier: dict | None, now: dict | None, *, quiet: bool) -> None:
+    from .notify import NtfyConfig, build_health_alert, send
+
+    config = NtfyConfig.from_env()
+    alert = build_health_alert(
+        changes, earlier["summary"] if earlier else None, now["summary"] if now else None
+    )
+    if config is None or alert is None:
         return
-    _render_selftest(report, changes, show_all=show_all, saved=save)
+    try:
+        send(config, *alert, tags="warning")
+    except Exception as exc:
+        typer.echo(f"ntfy alert failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    if not quiet:
+        console.print("[green]ntfy health alert sent.[/]")
 
 
 def _render_selftest(report: dict, changes: list[dict], *, show_all: bool, saved: bool) -> None:

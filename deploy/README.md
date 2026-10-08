@@ -53,6 +53,9 @@ sudo systemctl start recce-selftest.service       # optional first run (~5–10 
 journalctl -u recce-selftest -n 80 --no-pager      # results table + changes since last run
 ```
 
+If `RECCE_NTFY_URL` is set (see the monitoring section), the weekly run also pushes
+an alert when definitions newly break or the exit gets walled more.
+
 Verdicts: `healthy`, `false_positive` (skipped in searches), `false_negative`,
 `blocked` (401/403/429 or a bot challenge — depends on the egress IP, which
 the report records; not treated as broken), `error`, and `unverified` (no
