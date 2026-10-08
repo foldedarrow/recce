@@ -414,7 +414,7 @@ async def test_numverify_provider_can_be_skipped() -> None:
         "phone",
         client,  # type: ignore[arg-type]
         _settings(numverify_api_key="num-key"),
-        skip_provider_ids={"numverify", "vonage"},
+        skip_provider_ids={"numverify", "vonage", "websearch"},
     )
 
     assert hits == []
@@ -756,3 +756,80 @@ async def test_censys_provider_retries_once_on_rate_limit(monkeypatch) -> None: 
     assert censys_hits[1].status is Status.ERROR
     assert "rate-limited" in (censys_hits[1].error or "")
     assert len(client.requests) == 2  # webproperty lookup + one retry
+
+
+# --- web search (phone) ---------------------------------------------------------
+
+_BRAVE_BODY = {"web": {"results": [
+    {"title": "Who called <strong>07826 916903</strong>?", "url": "https://tellows.co.uk/num/07826916903",
+     "description": "Reports for 07826 916 903 - spam caller"},
+    {"title": "Unrelated plumber", "url": "https://plumber.example/", "description": "Call us today"},
+]}}
+
+
+@pytest.mark.asyncio
+async def test_websearch_is_pro_gated_and_needs_a_key(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.delenv("RECCE_PRO_LICENCE", raising=False)
+    client = DummyClient(DummyResponse(200, _BRAVE_BODY))
+    hits = await query_registered_providers(
+        "+447826916903", "phone", client, _settings(brave_api_key="k"),  # type: ignore[arg-type]
+        skip_provider_ids={"numverify", "vonage"},
+    )
+    web = [h for h in hits if h.source == "Web search"]
+    assert len(web) == 1 and web[0].status is Status.SKIPPED and "Pro" in (web[0].summary or "")
+    assert client.requests == []
+    none = await query_registered_providers(
+        "+447826916903", "phone", client, _settings(),  # type: ignore[arg-type]
+        skip_provider_ids={"numverify", "vonage"},
+    )
+    skip = next(h for h in none if h.source == "Web search")
+    assert "BRAVE_API_KEY" in (skip.summary or "") and "SERPAPI_API_KEY" in (skip.summary or "")
+
+
+@pytest.mark.asyncio
+async def test_websearch_brave_marks_confirmed_mentions(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-entitlement")
+    client = DummyClient(DummyResponse(200, _BRAVE_BODY))
+    hits = await query_registered_providers(
+        "+447826916903", "phone", client, _settings(brave_api_key="k"),  # type: ignore[arg-type]
+        skip_provider_ids={"numverify", "vonage"},
+    )
+    web = [h for h in hits if h.source == "Web search"]
+    assert len(client.requests) == 3  # web, social, reputation
+    url, kwargs = client.requests[0]
+    assert url.startswith("https://api.search.brave.com/") and kwargs["headers"]["X-Subscription-Token"] == "k"
+    assert '"07826 916903"' in kwargs["params"]["q"]
+    # The same results come back for each query, but each page is listed once.
+    assert [h.url for h in web] == ["https://tellows.co.uk/num/07826916903", "https://plumber.example/"]
+    assert web[0].extra["mentions_number"] is True and web[0].confidence == 0.7
+    assert "<strong>" not in (web[0].summary or "")
+    assert web[1].extra["mentions_number"] is False and "number not in snippet" in (web[1].summary or "")
+
+
+@pytest.mark.asyncio
+async def test_websearch_serpapi_backend_and_errors(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setenv("RECCE_PRO_LICENCE", "test-entitlement")
+    body = {"organic_results": [{"title": "t", "link": "https://x.example/p", "snippet": "+44 7826 916903"}]}
+    client = DummyClient(DummyResponse(200, body))
+    hits = await query_registered_providers(
+        "+447826916903", "phone", client, _settings(serpapi_api_key="s"),  # type: ignore[arg-type]
+        skip_provider_ids={"numverify", "vonage"},
+    )
+    web = [h for h in hits if h.source == "Web search"]
+    assert client.requests[0][0].startswith("https://serpapi.com/") and client.requests[0][1]["params"]["api_key"] == "s"
+    assert len(web) == 1 and web[0].extra["backend"] == "serpapi" and web[0].extra["mentions_number"]
+
+    failing = DummyClient(DummyResponse(401, {}))
+    hits = await query_registered_providers(
+        "+447826916903", "phone", failing, _settings(brave_api_key="bad"),  # type: ignore[arg-type]
+        skip_provider_ids={"numverify", "vonage"},
+    )
+    err = next(h for h in hits if h.source == "Web search")
+    assert err.status is Status.ERROR and "HTTP 401" in (err.error or "")
+
+    empty = DummyClient(DummyResponse(200, {"web": {"results": []}}))
+    hits = await query_registered_providers(
+        "+447826916903", "phone", empty, _settings(brave_api_key="k"),  # type: ignore[arg-type]
+        skip_provider_ids={"numverify", "vonage"},
+    )
+    assert next(h for h in hits if h.source == "Web search").status is Status.NOT_FOUND

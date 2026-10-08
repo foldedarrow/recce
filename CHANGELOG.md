@@ -9,6 +9,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Phone web search provider** (Pro): with `BRAVE_API_KEY` or `SERPAPI_API_KEY`,
+  `recce phone` runs three searches (plain, social/classified sites,
+  spam-reputation sites) over every format of the number and lists the pages
+  found, marking those whose snippet contains the number as confirmed. The
+  number is sent to the search vendor as a query.
 - **Site-health alerts.** `recce selftest` pushes an ntfy alert (`RECCE_NTFY_URL`)
   when site definitions newly break (false positive/negative) or the number of
   blocked sites jumps, the sign of a burned exit IP. `--no-notify` disables it.

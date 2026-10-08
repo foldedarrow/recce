@@ -278,6 +278,7 @@ Edit `~/.config/recce/.env` (create the dir if it doesn't exist):
 HIBP_API_KEY=...        # Have I Been Pwned breach data — ~$4/mo
 HUNTER_API_KEY=...      # Hunter.io email verification — free 25/mo
 NUMVERIFY_API_KEY=...   # Phone carrier lookup — free 100/mo
+BRAVE_API_KEY=...       # Pro-gated; phone web search (or SERPAPI_API_KEY)
 EMAILREP_API_KEY=...    # EmailRep reputation — free / paid
 COMPANIES_HOUSE_KEY=... # Optional UK company lookup for recce domain
 SHODAN_API_KEY=...      # Pro-gated; DNS API needs a paid Shodan Membership
