@@ -121,6 +121,14 @@ def _pivot_hits(e164: str, intl: str, national: str, region: str) -> list[Hit]:
     # the pivot surfaces hits regardless of how a page happens to format it.
     variants = number_format_variants(e164, intl, national)
     search_q = quote(" OR ".join(f'"{v}"' for v in variants))
+    # Bing returns unrelated pages for quoted digit strings and for compact
+    # "+44…" forms, so it gets the spaced/plain shapes, unquoted.
+    bing_variants: list[str] = []
+    for v in (national, national_digits, intl):
+        v = (v or "").strip()
+        if v and v not in bing_variants:
+            bing_variants.append(v)
+    bing_q = quote(" OR ".join(bing_variants))
     sync_q = quote(e164)
     hits = [
         Hit(
@@ -143,7 +151,7 @@ def _pivot_hits(e164: str, intl: str, national: str, region: str) -> list[Hit]:
             source="Bing web",
             category="pivot",
             status=Status.FOUND,
-            url=f"https://www.bing.com/search?q={search_q}",
+            url=f"https://www.bing.com/search?q={bing_q}",
             summary="second engine — indexes pages Google misses",
             confidence=0.4,
         ),

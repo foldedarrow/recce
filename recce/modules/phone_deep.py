@@ -42,7 +42,7 @@ _BROWSER_UA = (
 _PLATFORMS: tuple[tuple[str, str], ...] = (
     ("Facebook", "facebook.com"),
     ("Instagram", "instagram.com"),
-    ("X / Twitter", "twitter.com"),
+    ("X / Twitter", "x.com"),
     ("LinkedIn", "linkedin.com"),
     ("Telegram", "t.me"),
     ("Reddit", "reddit.com"),
