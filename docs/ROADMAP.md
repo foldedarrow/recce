@@ -91,9 +91,12 @@ client). Still open, below.
 - **Domain:** implement the VirusTotal and SecurityTrails placeholders
   (needs keys to verify live).
 
-### 7. Reporting
-HTML dossier (summary, timeline, identity graph, evidence links), and
-monitoring alerts when a saved investigation's re-run finds new evidence.
+### 7. Reporting — HTML dossier shipped
+`recce/core/dossier.py`: summary, identity graph (pivot chain), clusters,
+timeline, findings with provenance, methodology. Open: monitoring alerts when
+a saved investigation's re-run finds new evidence. The diff already exists
+(`compare_latest_runs_for_query`); it still needs a scheduled re-run and an
+alert channel.
 
 ## Engineering
 - CI runs ruff + pytest on 3.11 and 3.13 for every PR (`.github/workflows/ci.yml`).

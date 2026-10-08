@@ -128,6 +128,7 @@ recce username somehandle --recursive --depth 2           # up to 3 levels
 recce username somehandle -R --max-pivots 5               # cap follow-ups per level
 recce username somehandle -R --case <investigation-id>    # save runs + chain to a case
 recce investigations export <investigation-id>            # Markdown report incl. pivot chain
+recce investigations export <id> --format html -o case.html # self-contained HTML dossier
 ```
 
 - `--depth` defaults to 1 and is capped at 3; `--max-pivots` (default 10)
@@ -319,4 +320,4 @@ If you want a real Mac app with a Dock icon and no browser chrome, see the READM
 - **Domain summary** — top-level domain facts extracted from the detailed evidence.
 - **Likely the same person** — username results open with attribution clusters (members, linking signals, account timeline); the results table has a Cluster column.
 - **Follow-up searches** — under username and email results, identifiers named in the hits appear as one-click searches. The follow-up is saved to the active case with the hit that led to it (deep mode never applies).
-- **Downloads** — every report has CSV and JSON buttons.
+- **Downloads** — every report has CSV and JSON buttons. The Investigations tab adds an **HTML dossier** (full or redacted): summary, identity graph of the pivot chain, likely-same-person clusters, a dated timeline (account creation, first archived, breaches, infostealer infections), findings with provenance, and methodology. It's one file with no external assets.

@@ -228,10 +228,10 @@ def cmd_investigations_delete(
     )
 
 
-@investigations_app.command("export", help="Export an investigation, including its pivot chain.")
+@investigations_app.command("export", help="Export an investigation (Markdown, JSON, or an HTML dossier).")
 def cmd_investigations_export(
     case_id: str = typer.Argument(..., help="Investigation case ID."),
-    fmt: str = typer.Option("md", "--format", help="md or json."),
+    fmt: str = typer.Option("md", "--format", help="md, json, or html (self-contained dossier)."),
     redacted: bool = typer.Option(False, "--redacted", help="Replace subject identifiers with hashes."),
     out: Path | None = typer.Option(None, "--out", "-o", help="Write to a file instead of stdout."),
 ) -> None:
@@ -243,8 +243,10 @@ def cmd_investigations_export(
         text = store.export_markdown(case_id, redacted=redacted)
     elif fmt == "json":
         text = store.export_json_bytes(case_id, redacted=redacted).decode()
+    elif fmt == "html":
+        text = store.export_html(case_id, redacted=redacted)
     else:
-        raise typer.BadParameter("--format must be md or json")
+        raise typer.BadParameter("--format must be md, json or html")
     if out:
         out.write_text(text)
         console.print(f"[dim]Saved →[/] [cyan]{out}[/]")

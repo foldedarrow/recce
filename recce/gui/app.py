@@ -724,6 +724,22 @@ def _investigations_mode() -> None:
 
     export_base = "".join(c if c.isalnum() else "-" for c in inv["name"].lower())[:40]
     st.subheader("Exports")
+    h1, h2 = st.columns(2)
+    h1.download_button(
+        "HTML dossier",
+        store.export_html(inv["id"], redacted=False).encode(),
+        file_name=f"recce-{export_base}-dossier.html",
+        mime="text/html",
+        type="primary",
+        use_container_width=True,
+    )
+    h2.download_button(
+        "Redacted HTML dossier",
+        store.export_html(inv["id"], redacted=True).encode(),
+        file_name=f"recce-{export_base}-dossier-redacted.html",
+        mime="text/html",
+        use_container_width=True,
+    )
     d1, d2, d3 = st.columns(3)
     d1.download_button(
         "Full JSON",
