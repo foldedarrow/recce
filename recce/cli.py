@@ -644,6 +644,7 @@ def cmd_doctor(
         "SECURITYTRAILS_API_KEY": settings.securitytrails_api_key,
         "CENSYS_API_TOKEN": settings.censys_api_token,
         "CENSYS_ORG_ID": settings.censys_org_id,
+        "GITHUB_TOKEN": settings.github_token,
     }
     for name, val in keys.items():
         marker = "[green]set[/]" if val else "[dim]unset[/]"

@@ -756,6 +756,7 @@ def _api_keys_mode() -> None:
         ("SECURITYTRAILS_API_KEY", "SecurityTrails", settings.securitytrails_api_key),
         ("CENSYS_API_TOKEN", "Censys personal access token", settings.censys_api_token),
         ("CENSYS_ORG_ID", "Censys organization ID (paid plans only)", settings.censys_org_id),
+        ("GITHUB_TOKEN", "GitHub token (optional; raises search rate limits)", settings.github_token),
     ]
 
     with st.form("api_keys_form"):

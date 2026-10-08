@@ -22,6 +22,10 @@ permissions where the host platform supports POSIX file modes.
 |---|---|---|---|---|
 | Companies House | Free | Domain | `COMPANIES_HOUSE_KEY` | Live in domain module; RDAP org handoff |
 | Have I Been Pwned | Free | Email | `HIBP_API_KEY` | Provider-native live query |
+| XposedOrNot | Free | Email | none | Provider-native live query: breach names/years, exposed data types, plaintext-password flag, paste count |
+| LeakCheck (public) | Free | Email | none | Provider-native live query: breach source names/dates, exposed field kinds (never values), infostealer flag |
+| Proton key server | Free | Email | none | Confirms Proton accounts (incl. custom domains) and dates the oldest public key ≈ account age |
+| GitHub commits | Free | Email | optional `GITHUB_TOKEN` | Email → GitHub logins, commit author names, repos; unauthenticated search is 10 req/min |
 | Hunter.io | Free | Email | `HUNTER_API_KEY` | Provider-native email query; domain planned |
 | NumVerify | Free | Phone | `NUMVERIFY_API_KEY` | Provider-native live query |
 | Vonage Number Insight | Pro | Phone | `VONAGE_API_KEY`, `VONAGE_API_SECRET` | Provider-native live HLR: ported status, current/original carrier, reachability, roaming |

@@ -97,6 +97,12 @@ class Provider:
         del target, target_type, ctx
         return []
 
+    def make_hit(self, category: str, status: Status, **kwargs: object) -> Hit:
+        """Build a Hit for this provider, tagging `extra` with its provider id."""
+        extra = dict(kwargs.pop("extra", None) or {})  # type: ignore[call-overload]
+        extra.setdefault("provider_id", self.id)
+        return Hit(source=self.name, category=category, status=status, extra=extra, **kwargs)  # type: ignore[arg-type]
+
 
 def append_provider_gate_hits(
     report: Report,
