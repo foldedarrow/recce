@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Site-health alerts.** `recce selftest` pushes an ntfy alert (`RECCE_NTFY_URL`)
+  when site definitions newly break (false positive/negative) or the number of
+  blocked sites jumps, the sign of a burned exit IP. `--no-notify` disables it.
 - **Per-site exit preferences.** `recce selftest` probes bot-walled sites through
   the fallback exits (`--exits/--no-exits`, `--fallback-proxy`) and records which
   work. Username searches then try the working exit first and skip exits known

@@ -69,6 +69,49 @@ def build_alert(outcomes: list[CaseOutcome], *, detail: bool = False) -> tuple[s
     return title, "\n".join(lines)
 
 
+# Selftest verdicts that mean a site definition itself is broken. `blocked` and
+# `error` flip with the egress IP and flaky sites, so they never alert alone.
+BROKEN = ("false_positive", "false_negative")
+BLOCKED_JUMP_MIN = 10  # blocked sites gained, at least this many and 20% of the earlier count
+MAX_LISTED = 12
+
+
+def build_health_alert(
+    changes: list[dict], previous: dict | None, current: dict | None
+) -> tuple[str, str] | None:
+    """(title, body) when a selftest run broke site definitions or got the exit walled.
+
+    - Newly broken: a site that was not false_positive/false_negative last run
+      and now is (a site seen for the first time is not "new breakage").
+    - Exit burned: the count of `blocked` sites rose sharply, which usually means
+      the egress IP lost reputation, not that sites changed.
+    `previous` and `current` are selftest summaries ({status: count}); with no
+    previous run there is nothing to compare, so no alert.
+    """
+    if previous is None:
+        return None
+    broken = [c for c in changes if c.get("from") and c["to"] in BROKEN and c["from"] not in BROKEN]
+    before = (previous or {}).get("blocked", 0)
+    after = (current or {}).get("blocked", 0)
+    jumped = after - before >= max(BLOCKED_JUMP_MIN, before // 5)
+    if not broken and not jumped:
+        return None
+    parts = []
+    lines = []
+    if broken:
+        parts.append(f"{len(broken)} site definition{'s' if len(broken) != 1 else ''} broke")
+        lines.append("Newly broken:")
+        for c in broken[:MAX_LISTED]:
+            lines.append(f"  {c['site']}: {c['from']} -> {c['to']}")
+        if len(broken) > MAX_LISTED:
+            lines.append(f"  +{len(broken) - MAX_LISTED} more")
+    if jumped:
+        parts.append("exit walled more")
+        lines.append(f"Blocked sites rose from {before} to {after}: the egress IP may have lost reputation.")
+    lines.append("Run `recce selftest` or see the journal for the full table.")
+    return f"recce: {' and '.join(parts)}", "\n".join(lines)
+
+
 def send(config: NtfyConfig, title: str, body: str, *, tags: str = "mag", priority: str = "default") -> None:
     """POST one message to the ntfy topic. Raises on HTTP or network failure."""
     headers = {"Title": title, "Tags": tags, "Priority": priority}
