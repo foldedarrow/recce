@@ -202,7 +202,7 @@ with st.sidebar:
     configured_fallback = resolve_fallback()
     runtime_fallback = st.text_input(
         "Username fallback exit",
-        placeholder=f"configured: {configured_fallback.label}" if configured_fallback else "e.g. tor",
+        placeholder=f"configured: {configured_fallback.label}" if configured_fallback else "e.g. tor or tor,home",
         help="Username probes bot-walled on the main exit (HTTP 401/403/429) are retried "
         "through this exit. Blank uses RECCE_USERNAME_FALLBACK_PROXY.",
     ).strip()

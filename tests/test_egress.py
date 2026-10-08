@@ -213,3 +213,54 @@ def test_exit_is_in_investigation_exports(tmp_path: Path) -> None:
     store.record_run(investigation_id=inv["id"], report=report, args={}, recce_version="t", wmn_cache={})
 
     assert f"- Exit: tor ({TOR})" in store.export_markdown(inv["id"])
+
+
+def test_fallback_list_becomes_an_ordered_chain() -> None:
+    from recce.core.egress import ExitChain, fallback_exits
+
+    env = {**ENV, "RECCE_USERNAME_FALLBACK_PROXY": "tor, home"}
+    chain = resolve_fallback(env=env)
+
+    assert isinstance(chain, ExitChain)
+    assert [exit_.name for exit_ in fallback_exits(chain)] == ["tor", "home"]
+    assert chain.label == f"tor ({TOR}) → home (socks5h://kit:***@10.0.0.2:1080)"
+    assert [label for label, _ in configured_exits(env) if label.startswith("username fallback")] == [
+        "username fallback 1",
+        "username fallback 2",
+    ]
+    # A single value is still a plain Exit.
+    assert resolve_fallback("tor", env=ENV) == Exit("tor", TOR)
+
+
+@pytest.mark.asyncio
+async def test_fallback_chain_retries_only_what_earlier_exits_left_blocked(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from recce.core.egress import ExitChain
+    from recce.core.output import fallback_note
+
+    home_url = "socks5h://127.0.0.1:1080"
+    monkeypatch.setenv("RECCE_EXITS", f"tor={TOR};home={home_url}")
+    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False: _sites())
+    primary = SiteClient({"walled.test": "block", "fortress.test": "block"})
+    tor = SiteClient({"fortress.test": "block"}, proxy=TOR)  # Tor gets past Walled, not Fortress
+    home = SiteClient({}, proxy=home_url)  # home gets past everything
+    clients = {TOR: tor, home_url: home}
+    monkeypatch.setattr(username_mod, "_client_for_exit", lambda client, exit_, browser: clients[exit_.proxy])
+
+    report = await username_mod.search_username(
+        "alice", primary, show_progress=False, impersonate=False, per_domain_rate=0,
+        guarded_backoff_seconds=0, flagged_sites="off", attribute_hits=False,
+        fallback_exit=ExitChain((Exit("tor", TOR), Exit("home", home_url))),
+    )
+
+    hits = {h.source: h for h in report.hits}
+    assert hits["Walled"].extra["exit"] == f"tor ({TOR})"
+    fortress = hits["Fortress"]
+    assert fortress.status is Status.FOUND and fortress.extra["exit"] == f"home ({home_url})"
+    assert [a["exit"] for a in fortress.extra["fallback_attempts"]] == [f"tor ({TOR})", f"home ({home_url})"]
+    assert fortress.extra["fallback"]["primary"] == "HTTP 403"
+    # Home only saw what Tor couldn't answer (plus that hit's canary re-check).
+    assert not any("walled.test" in u for u in home.requests)
+    assert not any("open.test" in u for u in tor.requests + home.requests)
+    assert tor.closed and home.closed
+    note = fallback_note(report)
+    assert f"1 via tor ({TOR})" in note and f"1 via home ({home_url})" in note and "0 still blocked" in note

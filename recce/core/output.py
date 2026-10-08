@@ -137,9 +137,15 @@ def fallback_note(report: Report) -> str:
     retried = [h for h in report.hits if "fallback" in h.extra]
     if not retried:
         return ""
-    via = retried[0].extra["fallback"].get("exit")
-    answered = sum(1 for h in retried if h.extra.get("exit"))
-    return f"   Retried {len(retried)} bot-walled probe(s) via {via}: {answered} answered"
+    exits: list[str] = []
+    for hit in retried:
+        for attempt in hit.extra.get("fallback_attempts") or [hit.extra["fallback"]]:
+            if attempt.get("exit") not in exits:
+                exits.append(attempt.get("exit"))
+    answered = {exit_: sum(1 for h in retried if h.extra.get("exit") == exit_) for exit_ in exits}
+    still = sum(1 for h in retried if not h.extra.get("exit"))
+    parts = ", ".join(f"{count} via {exit_}" for exit_, count in answered.items())
+    return f"   Retried {len(retried)} bot-walled probe(s): {parts} answered; {still} still blocked"
 
 
 def render_summary_panel(report: Report) -> None:

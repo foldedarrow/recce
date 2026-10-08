@@ -64,13 +64,14 @@ blocked probes through another one, and records the exit on every report.
 RECCE_EXITS=tor=socks5h://127.0.0.1:9050;home=socks5h://user:pass@10.0.0.2:1080
 RECCE_PROXY=home                     # default exit for every module
 RECCE_DOMAIN_PROXY=direct            # per module: USERNAME / EMAIL / PHONE / DOMAIN
-RECCE_USERNAME_FALLBACK_PROXY=tor    # retry bot-walled username probes here
+RECCE_USERNAME_FALLBACK_PROXY=tor,home  # retry bot-walled username probes, in order
 ```
 
 ```bash
 recce doctor                                   # every exit and the public IP it appears as
 recce username somehandle --proxy tor          # one-off exit (name, URL or "direct")
 recce username somehandle --fallback-proxy tor # retry 401/403/429 probes through Tor
+recce username somehandle --fallback-proxy tor,home  # Tor first, then home for what's still blocked
 ```
 
 - Precedence: `--proxy` > `RECCE_<MODULE>_PROXY` > `RECCE_PROXY` > direct.
@@ -78,6 +79,9 @@ recce username somehandle --fallback-proxy tor # retry 401/403/429 probes throug
   decisive answer replaces the blocked one, is tagged `via <exit>`, and its
   made-up-username check runs through the same exit. Use `socks5h://` for Tor
   so DNS resolves through it too.
+- A comma list is a chain: each exit retries only the probes the earlier
+  ones left blocked, so put the most private exit first (`tor,home` exposes
+  your home IP only to the sites Tor couldn't reach).
 - Every report records its exit (`Exit:` under the query, in JSON as `exit`,
   and in investigation exports). Hits answered by the fallback carry
   `extra.exit`. Proxy passwords are masked wherever an exit is shown or saved.
