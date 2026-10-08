@@ -363,8 +363,9 @@ def cmd_username(
     ),
     fallback_proxy: str | None = typer.Option(
         None, "--fallback-proxy",
-        help="Retry probes the main exit gets bot-walled on (HTTP 401/403/429) through this exit "
-        "(URL, RECCE_EXITS name, e.g. 'tor'). Default: RECCE_USERNAME_FALLBACK_PROXY.",
+        help="Retry probes the main exit gets bot-walled on (HTTP 401/403/429) through this exit, "
+        "or a comma list tried in order (URLs or RECCE_EXITS names, e.g. 'tor' or 'tor,home'). "
+        "Default: RECCE_USERNAME_FALLBACK_PROXY.",
     ),
     concurrency: int | None = typer.Option(
         None, "--concurrency", "-c", help="Override max parallel requests.",

@@ -48,7 +48,7 @@ from rich.progress import (
 )
 
 from ..config import Settings
-from ..core.egress import Exit, exit_label
+from ..core.egress import Exit, ExitChain, exit_label, fallback_exits
 from ..core.http import HttpClient, ImpersonatingClient, impersonation_available
 from ..core.output import console
 from ..core.result import Hit, Report, Status
@@ -558,15 +558,19 @@ async def _retry_blocked(
             "exit": label,
             "status": attempt.status.value,
             "detail": attempt.summary or attempt.error,
-            "primary": blocked.summary,
+            "primary": blocked.extra.get("fallback", {}).get("primary", blocked.summary),
         }
+        # Every exit tried so far, in order (a chain retries via several).
+        tried = [*blocked.extra.get("fallback_attempts", []), record]
         if attempt.status in (Status.FOUND, Status.NOT_FOUND):
             attempt.extra["exit"] = label
             attempt.extra["fallback"] = record
+            attempt.extra["fallback_attempts"] = tried
             attempt.summary = f"{attempt.summary or attempt.status.value} · via {label}"
             hits[index] = attempt
         else:
             blocked.extra["fallback"] = record
+            blocked.extra["fallback_attempts"] = tried
 
     await asyncio.gather(*(retry(i) for i, hit in enumerate(hits) if _is_blocked(hit)))
 
@@ -575,7 +579,7 @@ def _client_for_exit(client: Any, exit_: Exit, *, browser: bool) -> Any:
     """A client like `client` that leaves through `exit_`."""
     if browser:
         return ImpersonatingClient(
-            timeout=client.timeout, max_concurrency=client.max_concurrency, proxy=exit_.proxy
+            timeout=client.timeout, max_concurrency=client.max_concurrency, proxy=exit_.proxy, ipv4=exit_.ipv4
         )
     return HttpClient(
         user_agent=client.user_agent,
@@ -622,7 +626,7 @@ async def search_username(
     skip_provider_ids: set[str] | None = None,
     flagged_sites: str | None = None,
     attribute_hits: bool = True,
-    fallback_exit: Exit | None = None,
+    fallback_exit: Exit | ExitChain | None = None,
 ) -> Report:
     """Probe every site for `username`, then run username providers.
 
@@ -639,8 +643,9 @@ async def search_username(
     profile data (see `attribution.py`), fetching avatars through `client`.
 
     With `fallback_exit`, probes the primary exit gets bot-walled on (HTTP
-    401/403/429) are retried through that exit; a decisive answer replaces
-    the blocked one and records `extra["exit"]`.
+    401/403/429) are retried through that exit -- or, for an ExitChain,
+    through each exit in order, each only for probes still blocked. A
+    decisive answer replaces the blocked one and records `extra["exit"]`.
     """
     kwargs: dict[str, Any] = dict(
         only_categories=only_categories, exclude_categories=exclude_categories,
@@ -655,10 +660,13 @@ async def search_username(
         if use_browser:
             probe_client = ImpersonatingClient.from_client(client)
             opened.append(probe_client)
-        if fallback_exit is not None:
-            fallback = _client_for_exit(client, fallback_exit, browser=use_browser)
+        fallbacks = []
+        for exit_ in fallback_exits(fallback_exit):
+            fallback = _client_for_exit(client, exit_, browser=use_browser)
             opened.append(fallback)
-            kwargs["fallback"] = (fallback, fallback_exit.label)
+            fallbacks.append((fallback, exit_.label))
+        if fallbacks:
+            kwargs["fallback"] = fallbacks
         report = await _search_username(username, probe_client, **kwargs)
     finally:
         for opened_client in opened:
@@ -695,7 +703,7 @@ async def _search_username(
     guarded_backoff_seconds: float,
     verify_found: bool,
     flagged_sites: str | None = None,
-    fallback: tuple[Any, str] | None = None,
+    fallback: list[tuple[Any, str]] | tuple[Any, str] | None = None,
 ) -> Report:
     if not USERNAME_RE.match(username):
         raise ValueError(
@@ -731,8 +739,8 @@ async def _search_username(
 
     async def finalise(results: list[Hit]) -> Report:
         verify_clients: dict[str, Any] = {}
-        if fallback is not None:
-            fallback_client, label = fallback
+        chain = [fallback] if isinstance(fallback, tuple) else (fallback or [])
+        for fallback_client, label in chain:  # in order; each retries only what's still blocked
             await _retry_blocked(fallback_client, label, sites_by_name, results, username, throttle)
             verify_clients[label] = fallback_client
         if verify_found:

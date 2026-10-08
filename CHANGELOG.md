@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Username fallback exits can be an ordered chain (`--fallback-proxy tor,home`,
+  `RECCE_USERNAME_FALLBACK_PROXY=tor,home`): each exit retries only the probes
+  the earlier ones left blocked, and every attempt is recorded on the hit.
 - **Investigation monitoring with ntfy alerts:** `recce investigations monitor`
   re-runs every open case's saved searches, saves the runs, and pushes an ntfy
   alert when evidence is new to *every* earlier run of that search. Deep and

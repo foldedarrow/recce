@@ -150,13 +150,23 @@ class ImpersonatingClient:
         retries: int = 1,
         proxy: str | None = None,
         impersonate: str = "chrome",
+        ipv4: bool = False,
     ) -> None:
         from curl_cffi.requests import AsyncSession
 
         self._sem = asyncio.Semaphore(max_concurrency)
         self._retries = retries
         self._timeout = timeout
-        self._session = AsyncSession(impersonate=impersonate, proxy=proxy, timeout=timeout)
+        options = {}
+        if ipv4:
+            # Resolve targets to IPv4 only: an exit with no IPv6 route (e.g.
+            # a SOCKS tunnel to a v4-only host) fails on sites with AAAA records.
+            from curl_cffi import CurlOpt
+
+            options[CurlOpt.IPRESOLVE] = 1  # CURL_IPRESOLVE_V4
+        self._session = AsyncSession(
+            impersonate=impersonate, proxy=proxy, timeout=timeout, curl_options=options or None
+        )
 
     @classmethod
     def from_client(cls, client: HttpClient) -> ImpersonatingClient:
