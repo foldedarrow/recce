@@ -9,6 +9,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **GitHub identity** (username provider): profile details (name, company,
+  location, blog, linked X handle, join date) plus the git identities in the
+  user's own repos — real names and emails, GitHub noreply aliases, and
+  machine-hostname emails from unconfigured git — each flagged as linked to
+  the account or not. Username searches now run username providers.
 - Four keyless email sources: **XposedOrNot** (breaches, exposed data types,
   plaintext-password flag), **LeakCheck** public API (breach sources incl.
   infostealer logs — field kinds only, never values), **Proton key server**
