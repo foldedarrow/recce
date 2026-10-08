@@ -116,7 +116,7 @@ class GitHubIdentityProvider(Provider):
         async def commits(repo: str) -> list[tuple[str, dict[str, Any]]]:
             r = await ctx.client.get(
                 f"{API}/repos/{login}/{repo}/commits",
-                params={"author": login, "per_page": COMMITS_PER_REPO},
+                params={"per_page": COMMITS_PER_REPO},
                 headers=headers,
             )
             if r is None or r.status_code != 200:
@@ -126,15 +126,25 @@ class GitHubIdentityProvider(Provider):
             except Exception:
                 return []
 
+        # Keep identities GitHub links to this login, plus unlinked ones (an
+        # email GitHub can't match to any account -- e.g. a machine hostname
+        # from an unconfigured git). Commits linked to *other* accounts are
+        # collaborators, not this user, and are skipped.
         identities: dict[tuple[str, str], dict[str, Any]] = {}
         for batch in await asyncio.gather(*(commits(repo) for repo in repos)):
             for repo, item in batch:
                 for role in ("author", "committer"):
+                    account = (item.get(role) or {}).get("login")
+                    if account and account.lower() != login.lower():
+                        continue
                     person = (item.get("commit") or {}).get(role) or {}
                     name, email = person.get("name") or "", (person.get("email") or "").lower()
                     if not email or email == "noreply@github.com":
                         continue
-                    entry = identities.setdefault((name, email), {"name": name, "email": email, "repos": set(), "commits": 0})
+                    entry = identities.setdefault(
+                        (name, email),
+                        {"name": name, "email": email, "repos": set(), "commits": 0, "linked": bool(account)},
+                    )
                     entry["repos"].add(repo)
                     entry["commits"] += 1
         return identities
@@ -144,7 +154,13 @@ class GitHubIdentityProvider(Provider):
         for entry in sorted(identities.values(), key=lambda e: -e["commits"]):
             email = entry["email"]
             kind = _email_kind(email)
-            parts = [f"{entry['name'] or '(no name)'} <{email}>", kind, f"{entry['commits']} commit(s) in {', '.join(sorted(entry['repos']))}"]
+            link = "linked to this account" if entry["linked"] else "unlinked identity in their repos"
+            parts = [
+                f"{entry['name'] or '(no name)'} <{email}>",
+                kind,
+                link,
+                f"{entry['commits']} commit(s) in {', '.join(sorted(entry['repos']))}",
+            ]
             hits.append(
                 self.make_hit(
                     "identity",
@@ -158,6 +174,7 @@ class GitHubIdentityProvider(Provider):
                         "email_kind": kind,
                         "repos": sorted(entry["repos"]),
                         "commits": entry["commits"],
+                        "linked_to_account": entry["linked"],
                         "emails": [email] if kind == "real email" else [],
                     },
                 )

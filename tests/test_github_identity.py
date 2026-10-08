@@ -46,9 +46,13 @@ def _settings() -> Settings:
     )
 
 
-def _commit(name: str, email: str) -> dict:
+def _commit(name: str, email: str, login: str | None = "alice") -> dict:
     person = {"name": name, "email": email, "date": "2025-01-01T00:00:00Z"}
-    return {"commit": {"author": person, "committer": {"name": "GitHub", "email": "noreply@github.com"}}}
+    return {
+        "author": {"login": login} if login else None,
+        "committer": {"login": "web-flow"},
+        "commit": {"author": person, "committer": {"name": "GitHub", "email": "noreply@github.com"}},
+    }
 
 
 @pytest.mark.asyncio
@@ -77,7 +81,8 @@ async def test_github_identity_extracts_profile_and_commit_identities() -> None:
                     _commit("Alice Example", "alice@example.org"),
                     _commit("Alice Example", "alice@example.org"),
                     _commit("alice", "1234+alice@users.noreply.github.com"),
-                    _commit("Alice", "alice@Alices-MacBook.local"),
+                    _commit("Alice", "alice@Alices-MacBook.local", login=None),
+                    _commit("Bob Collaborator", "bob@example.net", login="bob"),
                 ],
             ),
         }
@@ -94,6 +99,10 @@ async def test_github_identity_extracts_profile_and_commit_identities() -> None:
     assert by_email["alice@example.org"].extra["emails"] == ["alice@example.org"]
     assert by_email["1234+alice@users.noreply.github.com"].extra["email_kind"] == "GitHub noreply alias"
     assert by_email["alice@alices-macbook.local"].extra["email_kind"].startswith("machine hostname")
+    assert by_email["alice@alices-macbook.local"].extra["linked_to_account"] is False
+    assert by_email["alice@example.org"].extra["linked_to_account"] is True
+    # Commits linked to other accounts are collaborators, not this user.
+    assert "bob@example.net" not in by_email
     # Forks are skipped; GitHub's own committer identity is ignored.
     assert f"{api}/repos/alice/forked/commits" not in client.requests
     assert "noreply@github.com" not in by_email
