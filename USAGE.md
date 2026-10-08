@@ -48,6 +48,29 @@ recce email someone@example.com --json out.json
 
 ---
 
+## Attribution clusters (`username`)
+
+A username existing on eight sites does not mean one person owns all eight.
+After every username search recce compares the hits and groups the ones whose
+public data corroborates each other into **Likely the same person** clusters:
+
+| Signal | Weight |
+|---|---|
+| Same profile (a site probe and its profile API) | 0.95 |
+| Cross-link (one profile links to the other: website, Keybase proof, X handle) | 0.80 |
+| Shared email | 0.80 |
+| Same avatar (perceptual hash; default/blank avatars ignored) | 0.60 |
+| Same display name (not just the handle; one-word names 0.20) | 0.45 |
+| Same location (vague ones like "Earth" ignored) | 0.15 |
+
+Signals combine as `1 − Π(1 − w)`; two hits link at ≥ 0.40, so location or a
+one-word name alone never links. Each cluster lists the links that formed it
+and a timeline of account-creation dates. Hits outside every cluster are
+marked "username only". The only extra network traffic is one GET per public
+avatar image. Clusters are saved in reports, investigations and exports.
+
+---
+
 ## Recursive pivoting (`username` and `email`)
 
 Hits often name other identifiers: GitHub identity's linked X handle and the
@@ -247,5 +270,6 @@ If you want a real Mac app with a Dock icon and no browser chrome, see the READM
 - **Phone tab** — text input, region selector, results with clickable WhatsApp / Truecaller / Sync.me / Google links.
 - **Domain tab** — domain profile form with passive categories and consent-gated subdomain bruteforce.
 - **Domain summary** — top-level domain facts extracted from the detailed evidence.
+- **Likely the same person** — username results open with attribution clusters (members, linking signals, account timeline); the results table has a Cluster column.
 - **Follow-up searches** — under username and email results, identifiers named in the hits appear as one-click searches. The follow-up is saved to the active case with the hit that led to it (deep mode never applies).
 - **Downloads** — every report has CSV and JSON buttons.

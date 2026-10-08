@@ -550,6 +550,8 @@ class InvestigationStore:
             if report.get("pivot"):
                 lines.append(f"- Discovered via: {_md_cell(describe_origin(report['pivot']))}")
             lines.append("")
+            for cluster in report.get("clusters") or []:
+                lines.extend(_cluster_lines(cluster))
             if confirmed:
                 lines.append("| Source | Category | URL | Notes |")
                 lines.append("|---|---|---|---|")
@@ -623,6 +625,11 @@ class InvestigationStore:
             pdf.text(f"Confirmed hits: {len(confirmed)}")
             if report.get("pivot"):
                 pdf.paragraph(f"Discovered via: {describe_origin(report['pivot'])}")
+            for cluster in report.get("clusters") or []:
+                head, *rest = [line for line in _cluster_lines(cluster) if line]
+                pdf.text(head.replace("**", ""))
+                for line in rest:
+                    pdf.bullet(line.removeprefix("- "))
             if confirmed:
                 for hit in confirmed[:12]:
                     detail = hit.get("summary") or hit.get("error") or hit.get("url") or ""
@@ -771,6 +778,26 @@ def pivot_edge(report: dict[str, Any]) -> dict[str, Any]:
         "hit_url": origin.get("hit_url"),
         "depth": origin.get("depth"),
     }
+
+
+def _cluster_lines(cluster: dict[str, Any]) -> list[str]:
+    """Markdown lines for one attribution cluster."""
+    members = ", ".join(m.get("source") or "-" for m in cluster.get("members", []))
+    lines = [
+        f"**Likely the same person (cluster {cluster.get('id')}, "
+        f"confidence {cluster.get('confidence', 0):.2f}):** {members}",
+        "",
+    ]
+    lines.extend(f"- {signal}" for signal in cluster.get("signals", []))
+    timeline = [
+        f"{m.get('source')} {str(m.get('created_at'))[:10]}"
+        for m in cluster.get("timeline", [])
+        if m.get("created_at")
+    ]
+    if timeline:
+        lines.append(f"- Account timeline: {' -> '.join(timeline)}")
+    lines.append("")
+    return lines
 
 
 def describe_origin(origin: PivotOrigin | dict[str, Any]) -> str:

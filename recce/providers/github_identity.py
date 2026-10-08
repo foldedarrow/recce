@@ -100,6 +100,7 @@ class GitHubIdentityProvider(Provider):
                 **fields,
                 "created_at": profile.get("created_at"),
                 "type": profile.get("type"),
+                "avatar_url": profile.get("avatar_url"),
                 "usernames": usernames,
                 "emails": emails,
             },

@@ -549,6 +549,7 @@ async def search_username(
     settings: Settings | None = None,
     skip_provider_ids: set[str] | None = None,
     flagged_sites: str | None = None,
+    attribute_hits: bool = True,
 ) -> Report:
     """Probe every site for `username`, then run username providers.
 
@@ -560,6 +561,9 @@ async def search_username(
     `flagged_sites` says what to do with definitions the last `recce selftest`
     caught reporting made-up usernames: "skip" (default), "mark" (probe, then
     downgrade), or "off". Defaults to $RECCE_FLAGGED_SITES, then "skip".
+
+    With `attribute_hits` (default), FOUND hits are clustered by corroborating
+    profile data (see `attribution.py`), fetching avatars through `client`.
     """
     kwargs: dict[str, Any] = dict(
         only_categories=only_categories, exclude_categories=exclude_categories,
@@ -584,6 +588,10 @@ async def search_username(
         ):
             report.add(hit)
         report.finish()
+    if attribute_hits:
+        from .attribution import attribute
+
+        await attribute(report, client)
     return report
 
 

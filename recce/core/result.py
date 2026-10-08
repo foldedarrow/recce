@@ -47,12 +47,29 @@ class PivotOrigin(BaseModel):
     depth: int = 1
 
 
+class ClusterMember(BaseModel):
+    source: str
+    url: str | None = None
+    created_at: str | None = None
+
+
+class Cluster(BaseModel):
+    """FOUND hits whose public data says they are probably one person."""
+
+    id: int
+    confidence: float = Field(ge=0.0, le=1.0)
+    members: list[ClusterMember] = Field(default_factory=list)
+    signals: list[str] = Field(default_factory=list)
+    timeline: list[ClusterMember] = Field(default_factory=list)
+
+
 class Report(BaseModel):
     """Top-level report from a single query."""
 
     query: str
     query_type: str
     pivot: PivotOrigin | None = None
+    clusters: list[Cluster] = Field(default_factory=list)
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
     hits: list[Hit] = Field(default_factory=list)

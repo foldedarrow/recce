@@ -22,6 +22,7 @@ from .core.output import (
     console,
     export_csv,
     export_json,
+    render_clusters,
     render_domain_summary_card,
     render_pivot_chain,
     render_pivot_suggestions,
@@ -1012,6 +1013,7 @@ def _render_and_pivot(
         append_registry_gate_hits(r, settings, skip_provider_ids=skip_provider_ids)
         render_report(r, show_misses=show_misses, show_errors=show_errors)
         render_summary_panel(r)
+        render_clusters(r)
 
     out: list[Report] = []
     for root in reports:
