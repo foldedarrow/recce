@@ -299,6 +299,8 @@ def cmd_username(
                     per_domain_rate=per_domain_rate,
                     verify_found=verify,
                     impersonate=impersonate,
+                    settings=settings,
+                    skip_provider_ids=skip_provider_ids,
                 )
 
             return await _run_bounded(run_one, targets, target_concurrency)

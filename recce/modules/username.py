@@ -47,6 +47,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
+from ..config import Settings
 from ..core.http import HttpClient, ImpersonatingClient, impersonation_available
 from ..core.output import console
 from ..core.result import Hit, Report, Status
@@ -515,27 +516,39 @@ async def search_username(
     guarded_backoff_seconds: float = DEFAULT_GUARDED_BACKOFF_SECONDS,
     verify_found: bool = True,
     impersonate: bool = True,
+    settings: Settings | None = None,
+    skip_provider_ids: set[str] | None = None,
 ) -> Report:
-    """Probe every site for `username`.
+    """Probe every site for `username`, then run username providers.
 
-    With `impersonate` (default) and curl_cffi installed, probes go out with a
-    real Chrome fingerprint, which gets past far more bot walls than httpx.
+    With `impersonate` (default) and curl_cffi installed, site probes go out
+    with a real Chrome fingerprint, which gets past far more bot walls than
+    httpx. API providers (e.g. GitHub identity) always use `client`, recce's
+    honest client. Providers run only when `settings` is given.
     """
-    if impersonate and impersonation_available():
-        browser = ImpersonatingClient.from_client(client)
-        try:
-            return await _search_username(
-                username, browser, only_categories=only_categories, exclude_categories=exclude_categories,
-                include_nsfw=include_nsfw, show_progress=show_progress, per_domain_rate=per_domain_rate,
-                guarded_backoff_seconds=guarded_backoff_seconds, verify_found=verify_found,
-            )
-        finally:
-            await browser.aclose()
-    return await _search_username(
-        username, client, only_categories=only_categories, exclude_categories=exclude_categories,
+    kwargs: dict[str, Any] = dict(
+        only_categories=only_categories, exclude_categories=exclude_categories,
         include_nsfw=include_nsfw, show_progress=show_progress, per_domain_rate=per_domain_rate,
         guarded_backoff_seconds=guarded_backoff_seconds, verify_found=verify_found,
     )
+    if impersonate and impersonation_available():
+        browser = ImpersonatingClient.from_client(client)
+        try:
+            report = await _search_username(username, browser, **kwargs)
+        finally:
+            await browser.aclose()
+    else:
+        report = await _search_username(username, client, **kwargs)
+
+    if settings is not None:
+        from ..providers import query_registered_providers
+
+        for hit in await query_registered_providers(
+            username, "username", client, settings, skip_provider_ids=skip_provider_ids
+        ):
+            report.add(hit)
+        report.finish()
+    return report
 
 
 async def _search_username(

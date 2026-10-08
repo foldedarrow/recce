@@ -301,6 +301,7 @@ async def rerun_saved_query(run: dict[str, Any]) -> Report:
                 include_nsfw=bool(args.get("include_nsfw")),
                 per_domain_rate=float(args.get("per_domain_rate") or DEFAULT_PER_DOMAIN_RATE),
                 show_progress=False,
+                settings=settings,
             )
         if run["query_type"] == "email":
             report = await search_email(query, client, settings)
@@ -841,6 +842,7 @@ def _username_mode() -> None:
                         include_nsfw=nsfw,
                         per_domain_rate=float(runtime_per_domain_rate),
                         show_progress=False,
+                        settings=settings,
                     )
 
             try:

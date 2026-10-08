@@ -13,6 +13,7 @@ from .base import Provider, ProviderContext, ProviderStatus, append_provider_gat
 from .censys import CensysProvider
 from .emailrep import EmailRepProvider
 from .github_commits import GitHubCommitsProvider
+from .github_identity import GitHubIdentityProvider
 from .hibp import HIBPProvider
 from .hunter import HunterProvider
 from .leakcheck import LeakCheckProvider
@@ -38,6 +39,7 @@ PROVIDERS: tuple[Provider, ...] = (
     LeakCheckProvider(),
     ProtonKeyProvider(),
     GitHubCommitsProvider(),
+    GitHubIdentityProvider(),
     HunterProvider(),
     NumVerifyProvider(),
     VonageNumberInsightProvider(),
