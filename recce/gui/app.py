@@ -15,7 +15,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from recce import __version__
+from recce import __version__, monitor
 from recce.config import Settings, user_env_path, write_user_env
 from recce.core.egress import Exit, resolve_exit, resolve_fallback
 from recce.core.http import http_client
@@ -353,77 +353,15 @@ def record_gui_run(report: Report, args: dict[str, Any]) -> None:
 
 
 async def rerun_saved_query(run: dict[str, Any]) -> Report:
-    args = run["args"]
-    timeout = float(args.get("timeout", runtime_timeout))
-    max_concurrency = int(args.get("request_concurrency", runtime_concurrency))
-    proxy = _gui_exit(run["query_type"]).proxy
-    query = run["query"]
-
-    async with http_client(
-        user_agent=settings.user_agent,
-        timeout=timeout,
-        max_concurrency=max_concurrency,
-        proxy=proxy,
-    ) as client:
-        if run["query_type"] == "username":
-            return await search_username(
-                query,
-                client,
-                only_categories=set(args.get("only_categories") or []) or None,
-                exclude_categories=set(args.get("exclude_categories") or []) or None,
-                include_nsfw=bool(args.get("include_nsfw")),
-                per_domain_rate=float(args.get("per_domain_rate") or DEFAULT_PER_DOMAIN_RATE),
-                show_progress=False,
-                settings=settings,
-                fallback_exit=_gui_fallback(),
-            )
-        if run["query_type"] == "email":
-            report = await search_email(query, client, settings)
-        elif run["query_type"] == "phone":
-            if args.get("deep") and not args.get("ownership_or_consent_confirmed"):
-                raise ValueError("Saved deep phone run is missing ownership or consent evidence.")
-            report = await search_phone(
-                query,
-                client,
-                settings,
-                default_region=str(args.get("default_region") or "GB"),
-                deep=bool(args.get("deep")),
-                deep_concurrency=int(args.get("deep_concurrency") or 4),
-            )
-        elif run["query_type"] == "domain":
-            if args.get("bruteforce") and not args.get("i_am_authorised"):
-                raise ValueError("Saved domain bruteforce run is missing authorisation evidence.")
-            report = await search_domain(
-                query,
-                client,
-                settings,
-                only_categories=set(args.get("only_categories") or []) or None,
-                exclude_categories=set(args.get("exclude_categories") or []) or None,
-                bruteforce=bool(args.get("bruteforce")),
-                authorised=bool(args.get("i_am_authorised")),
-                bruteforce_wordlist=str(args.get("bruteforce_wordlist") or "medium"),
-                bruteforce_concurrency=int(args.get("bruteforce_concurrency") or 25),
-                bruteforce_rate=int(args.get("bruteforce_rate") or 10),
-                validate_subs=bool(args.get("validate_subs", True)),
-            )
-        else:
-            raise ValueError(f"Cannot re-run saved query type: {run['query_type']}")
-
-    if run["query_type"] == "email" and args.get("deep"):
-        if not args.get("ownership_or_consent_confirmed"):
-            raise ValueError("Saved deep email run is missing ownership or consent evidence.")
-        for hit in await deep_email_probes(
-            query,
-            timeout=timeout,
-            max_concurrency=int(args.get("deep_concurrency") or 20),
-            proxy=proxy,
-            retry=bool(args.get("deep_retry", True)),
-            verify=bool(args.get("deep_verify", True)),
-            show_progress=False,
-        ):
-            report.add(hit)
-        report.finish()
-    return report
+    """Re-run a saved query using the sidebar's exit and runtime settings."""
+    return await monitor.rerun_saved_query(
+        run,
+        settings,
+        exit=_gui_exit(run["query_type"]),
+        fallback_exit=_gui_fallback(),
+        timeout=float(runtime_timeout),
+        max_concurrency=int(runtime_concurrency),
+    )
 
 
 def render_run_comparison(comparison: dict[str, Any]) -> None:

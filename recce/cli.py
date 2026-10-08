@@ -183,6 +183,71 @@ def cmd_investigations_list(
     console.print(table)
 
 
+@investigations_app.command(
+    "monitor",
+    help="Re-run every open case's saved searches; push an ntfy alert when evidence is new.",
+)
+def cmd_investigations_monitor(
+    case: list[str] = typer.Option(None, "--case", help="Only these case IDs (repeatable). Default: all open cases."),
+    include_active: bool = typer.Option(
+        False,
+        "--include-active",
+        help="Also re-run deep/bruteforce searches (active probes; consent recorded on the original run still applies).",
+    ),
+    notify: bool = typer.Option(True, "--notify/--no-notify", help="Send an ntfy alert when there is new evidence."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="List what would be re-run without running or saving."),
+) -> None:
+    from .monitor import monitor_investigations
+    from .notify import NtfyConfig, build_alert, case_label, send
+
+    settings = Settings.load()
+    store = _investigation_store()
+    outcomes = asyncio.run(
+        monitor_investigations(store, settings, case_ids=case or None, include_active=include_active, dry_run=dry_run)
+    )
+    if not outcomes:
+        console.print("[dim]No open cases to monitor.[/]")
+        return
+    table = Table("Case", "Search", "Result", "New")
+    for outcome in outcomes:
+        for q in outcome.queries:
+            result = q.status if not q.note else f"{q.status}: {q.note}"
+            table.add_row(case_label(outcome.investigation), f"{q.query_type} {q.query}", result, str(len(q.new)))
+    console.print(table)
+    total = sum(outcome.new_count for outcome in outcomes)
+    console.print(f"[bold]{total}[/] new finding(s) across {len(outcomes)} case(s).")
+
+    if dry_run or not notify:
+        return
+    config = NtfyConfig.from_env()
+    if config is None:
+        if total:
+            console.print("[yellow]RECCE_NTFY_URL is not set — no alert sent.[/]")
+        return
+    alert = build_alert(outcomes, detail=config.detail)
+    if alert is None:
+        return
+    try:
+        send(config, *alert)
+    except Exception as exc:
+        console.print(f"[red]ntfy alert failed:[/] {exc}")
+        raise typer.Exit(1) from exc
+    console.print("[green]ntfy alert sent.[/]")
+
+
+@investigations_app.command("notify-test", help="Send a test ntfy alert using RECCE_NTFY_URL.")
+def cmd_investigations_notify_test() -> None:
+    from .notify import NtfyConfig, send
+
+    Settings.load()  # loads ~/.config/recce/.env into the environment
+    config = NtfyConfig.from_env()
+    if config is None:
+        console.print("[red]RECCE_NTFY_URL is not set.[/] Add it to ~/.config/recce/.env.")
+        raise typer.Exit(1)
+    send(config, "recce: test alert", "Monitoring alerts from recce are working.", tags="white_check_mark")
+    console.print(f"[green]sent[/] test alert to {config.url.rsplit('/', 1)[0]}/…")
+
+
 @investigations_app.command("close", help="Mark an investigation closed.")
 def cmd_investigations_close(
     case_id: str = typer.Argument(..., help="Investigation case ID."),
