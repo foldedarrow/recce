@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Passive subdomains add **Cert Spotter** (second CT source) and **urlscan.io**,
+  both keyless. Live: 50 → 894 subdomains for a large domain while crt.sh 502'd.
 - **GitHub identity** (username provider): profile details (name, company,
   location, blog, linked X handle, join date) plus the git identities in the
   user's own repos — real names and emails, GitHub noreply aliases, and
@@ -52,6 +54,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Subdomain DNS validation resolves concurrently instead of one name at a time
+  (thousands of names previously took hours).
+- Technology detection no longer flags React/Vue on ordinary words ("reaction",
+  "revue"); frameworks need their real markers. Adds Nuxt, Angular, Svelte.
 - Phone pivots: the Bing link returned unrelated pages because Bing mishandles
   quoted digit strings and compact `+44…` numbers; it now searches the spaced
   national, plain national and spaced international formats unquoted. The deep
