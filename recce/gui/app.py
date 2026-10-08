@@ -225,6 +225,47 @@ STATUS_GLYPH = {
 }
 
 
+def _cluster_label(hit: Any) -> str:
+    attribution = hit.extra.get("attribution") if hit.is_found else None
+    if not attribution:
+        return ""
+    if attribution.get("cluster") is None:
+        return "username only"
+    return f"#{attribution['cluster']} ({attribution['confidence']:.2f})"
+
+
+def render_clusters(report: Report) -> None:
+    if not report.clusters:
+        return
+    st.subheader("Likely the same person")
+    st.caption(
+        "Hits linked by corroborating public data: same profile, cross-links, "
+        "shared email, same avatar, same display name or location. A shared "
+        "username alone is not evidence of one owner."
+    )
+    for cluster in report.clusters:
+        with st.container(border=True):
+            st.markdown(
+                f"**Cluster {cluster.id}** · {len(cluster.members)} profiles · "
+                f"confidence **{cluster.confidence:.2f}**  \n"
+                + ", ".join(
+                    f"[{m.source}]({m.url})" if m.url else m.source for m in cluster.members
+                )
+            )
+            for signal in cluster.signals:
+                st.caption(signal)
+            if cluster.timeline:
+                st.caption(
+                    "Timeline: "
+                    + " → ".join(
+                        f"{m.source} {m.created_at[:10]}" for m in cluster.timeline if m.created_at
+                    )
+                )
+    alone = len(report.found) - sum(len(c.members) for c in report.clusters)
+    if alone:
+        st.caption(f"{alone} other hit(s) match on the username only.")
+
+
 def report_to_df(report: Report) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for h in report.hits:
@@ -237,6 +278,7 @@ def report_to_df(report: Report) -> pd.DataFrame:
                 "URL": h.url or "",
                 "Notes": h.summary or h.error or "",
                 "Confidence": round(h.confidence, 2),
+                "Cluster": _cluster_label(h),
                 "ms": h.elapsed_ms or 0,
             }
         )
@@ -467,12 +509,16 @@ def render_results(report: Report, *, show_misses: bool, show_errors: bool) -> N
     c3.metric("Errors", len(errors))
     c4.metric("Elapsed", _elapsed_str(report))
 
+    render_clusters(report)
+
     if found:
         st.subheader("Confirmed hits")
         for h in found:
             with st.container(border=True):
                 cols = st.columns([3, 7])
-                cols[0].markdown(f"**{h.source}**  \n_{h.category}_")
+                cluster = _cluster_label(h)
+                badge = f"  \n`cluster {cluster}`" if cluster.startswith("#") else ""
+                cols[0].markdown(f"**{h.source}**  \n_{h.category}_{badge}")
                 detail = ""
                 if h.url:
                     detail += f"[{h.url}]({h.url})  \n"

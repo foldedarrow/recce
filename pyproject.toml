@@ -35,6 +35,8 @@ dependencies = [
     "holehe>=1.61",
     # Browser-fingerprint HTTP for username probes (gets past bot walls).
     "curl_cffi>=0.7",
+    # Avatar perceptual hashing for attribution clusters.
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]

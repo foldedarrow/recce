@@ -46,12 +46,14 @@ live checks: Reddit `about.json` (403 from Proton egress — revisit with
 Other instances (Mastodon beyond mastodon.social, self-hosted GitLab) are
 open.
 
-### 3. Attribution confidence (username reuse)
-A username existing on 8 sites does not mean one person owns all 8. Score
-each hit by corroboration: same display name, same avatar (perceptual hash),
-cross-links between profiles, matching location, account-creation ordering.
-Show clusters ("these 5 profiles look like the same person") instead of a
-flat list.
+### 3. Attribution confidence (username reuse) — shipped
+`recce/modules/attribution.py` links FOUND hits pairwise on same profile,
+cross-links, shared email, avatar dHash, display name and location, and
+clusters them (`Report.clusters`, `extra.attribution` per hit) with an
+account-creation timeline. Open: bare site probes (no profile API) can only
+join through URL/cross-links. Scraping names/avatars from their HTML (or
+OpenGraph tags) would let far more of them corroborate. Clusters across
+pivoted reports (one person, several handles) are not merged yet.
 
 ### 4. Site definition health
 - Shipped: `recce selftest` probes each definition with a `known` account

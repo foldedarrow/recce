@@ -236,3 +236,31 @@ def render_pivot_chain(run) -> None:  # type: ignore[no-untyped-def]
         parent = nodes.get((p.origin.from_type, p.origin.from_query), root)
         parent.add(Text(f"not run: {p.command}  ← {p.origin.source} ({p.origin.field})", style="dim"))
     console.print(Panel(root, title="[bold cyan]Pivot chain[/]", border_style="cyan"))
+
+
+def render_clusters(report: Report) -> None:
+    """Which FOUND hits look like the same person, and why."""
+    found = report.found
+    if not report.clusters or not found:
+        return
+    parts: list[Text] = []
+    for cluster in report.clusters:
+        head = Text()
+        head.append(f"Cluster {cluster.id}", style="bold")
+        head.append(f"  {len(cluster.members)} profiles · confidence {cluster.confidence:.2f}", style="green")
+        parts.append(head)
+        parts.append(Text("  " + ", ".join(m.source for m in cluster.members), style="cyan"))
+        for signal in cluster.signals[:8]:
+            parts.append(Text(f"    {signal}", style="dim"))
+        if len(cluster.signals) > 8:
+            parts.append(Text(f"    +{len(cluster.signals) - 8} more links", style="dim"))
+        if cluster.timeline:
+            steps = " → ".join(f"{m.source} {m.created_at[:10]}" for m in cluster.timeline if m.created_at)
+            parts.append(Text(f"  timeline: {steps}", style="dim"))
+    clustered = sum(len(c.members) for c in report.clusters)
+    alone = len(found) - clustered
+    if alone:
+        parts.append(Text(f"{alone} other hit(s) match on the username only — not corroborated.", style="yellow"))
+    console.print(
+        Panel(Group(*parts), title="[bold cyan]Likely the same person[/]", border_style="cyan")
+    )
