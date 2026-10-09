@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import json
 from datetime import datetime, timedelta, timezone
+from typing import ClassVar
 
 import httpx
 import pytest
@@ -150,6 +151,29 @@ async def test_response_url_probe_does_not_follow_redirects() -> None:
 
     assert calls[0]["follow_redirects"] is False
     assert hit.status is Status.NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_a_body_that_fails_to_decode_still_classifies() -> None:
+    class BadCharsetResponse:
+        status_code = 200
+        headers: ClassVar[dict[str, str]] = {}
+        url = "https://forum.test/u/alice"
+        encoding = "utf-8"
+        content = "Профиль alice".encode("cp1251")
+
+        @property
+        def text(self) -> str:
+            return self.content.decode("utf-8")  # raises, as curl_cffi does
+
+    class Client:
+        async def get(self, url: str, **kwargs):  # type: ignore[no-untyped-def]
+            return BadCharsetResponse()
+
+    site = maigret.translate("Example", _entry(checkType="message", absenceStrs=["no such user"]), ENGINES)
+    hit = await _check_site(Client(), site, "alice")  # type: ignore[arg-type]
+
+    assert hit.status is Status.FOUND
 
 
 @pytest.mark.parametrize(

@@ -463,7 +463,30 @@ async def _check_site(
     collect_meta: bool = False,
 ) -> Hit:
     """Probe one site. FOUND hits (and every probe with `collect_meta`) keep
-    the page's meta tags in `extra["page_meta"]` for `apply_page_meta`."""
+    the page's meta tags in `extra["page_meta"]` for `apply_page_meta`.
+
+    Never raises: with thousands of definitions, one odd page must not sink
+    the whole search, so anything unexpected becomes an ERROR hit."""
+    try:
+        return await _probe_site(client, site, username, throttle=throttle, collect_meta=collect_meta)
+    except Exception as e:
+        return Hit(
+            source=site["name"],
+            category=site.get("category", "general"),
+            status=Status.ERROR,
+            url=_format(site["url"], username),
+            error=f"{type(e).__name__}: {e}"[:120],
+        )
+
+
+async def _probe_site(
+    client: HttpClient,
+    site: dict[str, Any],
+    username: str,
+    *,
+    throttle: PerDomainThrottle | None,
+    collect_meta: bool,
+) -> Hit:
     if site.get("strip_bad_char"):
         for ch in site["strip_bad_char"]:
             username = username.replace(ch, "")
@@ -512,7 +535,7 @@ async def _check_site(
     needs_body = collect_meta or method not in ("status", "redirect_match") or resp.status_code in (
         200, 202, 403, 429, 503,
     )
-    body = (resp.text or "") if needs_body else ""
+    body = _body_text(resp) if needs_body else ""
     location = resp.headers.get("Location", "")
     if throttle is not None and resp.status_code in GUARDED_HTTP_STATUSES:
         throttle.backoff(probe_url)
@@ -552,6 +575,22 @@ async def _check_site(
         extra=extra,
         elapsed_ms=elapsed_ms,
     )
+
+
+def _body_text(resp: Any) -> str:
+    """The response body as text. curl_cffi raises on a page whose bytes don't
+    match its declared charset (common on old windows-1251 forums); decode
+    those leniently rather than lose the probe."""
+    try:
+        return resp.text or ""
+    except (UnicodeDecodeError, LookupError):
+        content = getattr(resp, "content", b"") or b""
+        for encoding in (getattr(resp, "encoding", None), "utf-8"):
+            try:
+                return content.decode(encoding or "utf-8", errors="replace")
+            except LookupError:
+                continue
+        return ""
 
 
 async def _send(client: Any, verb: str, url: str, **kwargs: Any) -> tuple[Any, str | None]:
