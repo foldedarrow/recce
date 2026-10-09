@@ -41,8 +41,13 @@ pivot automatically.
 Hacker News, Chess.com, Docker Hub, npm (maintainer email) and Steam (XML)
 report name, bio, location, links, avatar and join date, with linked handles
 in `extra.usernames` and emails in `extra.emails` for (1). Left out after
-live checks: Reddit `about.json` (403 from Proton egress — revisit with
-*Egress*), PyPI (no user JSON), GitLab per-user detail (needs a token).
+live checks: Reddit (rechecked 2026-10-09 through direct, Tor and the home
+exit, with and without a Chrome fingerprint: `about.json` and
+`api.reddit.com` 403, old.reddit redirects to login, profile pages are a
+"Prove your humanity" captcha. Only the OAuth Data API is left, and since
+Reddit's November 2025 Responsible Builder Policy new OAuth clients need
+Reddit's approval — build a provider only if access is granted),
+PyPI (no user JSON), GitLab per-user detail (needs a token).
 Other instances (Mastodon beyond mastodon.social, self-hosted GitLab) are
 open.
 

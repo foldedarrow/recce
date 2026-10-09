@@ -7,9 +7,11 @@ bio, location, external links, avatar and account age, plus linked handles
 (`extra.usernames`) and emails (`extra.emails`) for pivoting.
 
 Every site here was checked live from a Proton VPN egress. Sites that block
-it or need auth are left out: Reddit's `about.json` 403s, PyPI has no user
-JSON, GitLab's per-user detail endpoint needs a token. A hit is FOUND only
-when the API itself returns the account.
+it or need auth are left out: Reddit (its JSON endpoints 403 and profile pages
+show a captcha from every exit, Tor and a home line included; the OAuth API
+needs approved access), PyPI has no user JSON, GitLab's per-user detail
+endpoint needs a token. A hit is FOUND only when the API itself returns the
+account.
 """
 
 from __future__ import annotations
