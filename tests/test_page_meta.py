@@ -72,7 +72,7 @@ async def test_username_search_enriches_found_hits_from_their_pages(monkeypatch)
         {"name": "Example Social", "category": "social", "url": "https://social.example.test/{u}",
          "method": "status", "found": [200], "missing": [404]},
     ]
-    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False: sites)
+    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False, **_: sites)
     canary_page = '<html><head><meta property="og:image" content="/avatars/sample.png"><title>Example Social</title></head></html>'
 
     class Client:

@@ -25,6 +25,10 @@ Results persist to ``~/.cache/recce/selftest.json``. Username searches read
 that file and skip definitions whose last selftest was a false positive (see
 `search_flags`), unless overridden with ``--flagged-sites`` or
 ``RECCE_FLAGGED_SITES``.
+
+Maigret sites (see `maigret.py`) are the other way round: off until proven.
+Searches run only those whose last verdict is ``healthy``, directly or
+through a fallback exit (`maigret_verified`).
 """
 
 from __future__ import annotations
@@ -52,6 +56,7 @@ from .username import (
     _client_for_exit,
     _load_sites,
     _load_wmn_sites,
+    site_source,
 )
 
 SELFTEST_PATH = CACHE_DIR / "selftest.json"
@@ -140,10 +145,14 @@ def select_sites(
     categories: set[str] | None = None,
     names: set[str] | None = None,
     include_nsfw: bool = False,
+    sources: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """The definitions a search would use, narrowed by category and/or name
-    (both case-insensitive), each with a `known` list where one exists."""
-    sites = _load_sites(include_nsfw=include_nsfw or bool(names))
+    """Every definition a search could use -- Maigret's included, verified or
+    not -- narrowed by category, name and/or source (wmn, custom, maigret;
+    all case-insensitive), each with a `known` list where one exists."""
+    sites = _load_sites(include_nsfw=include_nsfw or bool(names), maigret=True)
+    if sources:
+        sites = [s for s in sites if site_source(s) in sources]
     if categories:
         sites = [s for s in sites if s.get("category", "general").lower() in categories]
     if names:
@@ -151,7 +160,7 @@ def select_sites(
     wmn_known = _wmn_known_by_name()
     out = []
     for site in sites:
-        if not site.get("known") and site["name"].lower() in wmn_known:
+        if not site.get("known") and site_source(site) == "custom" and site["name"].lower() in wmn_known:
             # A custom definition for a platform WMN also covers: its known
             # accounts exist regardless of which definition probes them.
             site = {**site, "known": wmn_known[site["name"].lower()]}
@@ -179,6 +188,7 @@ async def check_site_health(
         "status": status,
         "detail": detail,
         "category": site.get("category", "general"),
+        "source": site_source(site),
         "fingerprint": site_fingerprint(site),
         "known": _probe_summary(known_hit, known_user),
         "canary": _probe_summary(canary_hit, canary),
@@ -433,6 +443,46 @@ def annotate_hit(hit: Hit, entry: dict[str, Any]) -> None:
     elif entry["status"] == FALSE_NEGATIVE and hit.status is Status.NOT_FOUND:
         hit.summary = f"unreliable miss — selftest {when} found this site misses known accounts"
         hit.confidence = min(hit.confidence, 0.3)
+
+
+def maigret_verified(
+    sites: list[dict[str, Any]],
+    *,
+    path: Path | None = None,
+    now: datetime | None = None,
+) -> set[str]:
+    """Names of the Maigret `sites` a search may run: the last selftest (fresh,
+    same definition) found the known account and not the canary, either
+    through the primary exit or, for a site walled there, through a fallback
+    exit (which `exit_order` then tries first)."""
+    state = load_state(path)
+    if not state:
+        return set()
+    now = now or _now()
+    out: set[str] = set()
+    for site in sites:
+        entry = state["sites"].get(site["name"])
+        if not entry or entry.get("fingerprint") != site_fingerprint(site) or not _fresh(entry, now):
+            continue
+        status = entry.get("status")
+        via_exit = status == BLOCKED and any(
+            (v or {}).get("status") == HEALTHY for v in (entry.get("exits") or {}).values()
+        )
+        if status == HEALTHY or via_exit:
+            out.add(site["name"])
+    return out
+
+
+def source_summary(path: Path | None = None) -> dict[str, dict[str, int]]:
+    """Stored verdict counts per site source (wmn / custom / maigret)."""
+    state = load_state(path)
+    if not state:
+        return {}
+    out: dict[str, dict[str, int]] = {}
+    for entry in state["sites"].values():
+        counts = out.setdefault(entry.get("source") or "wmn", dict.fromkeys(STATUSES, 0))
+        counts[entry["status"]] = counts.get(entry["status"], 0) + 1
+    return out
 
 
 def last_run_summary(path: Path | None = None) -> dict[str, Any] | None:

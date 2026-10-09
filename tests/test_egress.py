@@ -117,7 +117,7 @@ class SiteClient:
 @pytest.mark.asyncio
 async def test_blocked_probes_are_retried_through_the_fallback_exit(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setenv("RECCE_EXITS", f"tor={TOR}")
-    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False: _sites())
+    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False, **_: _sites())
     primary = SiteClient({"walled.test": "block", "fortress.test": "block"})
     fallback = SiteClient({"fortress.test": "block"}, proxy=TOR)
     monkeypatch.setattr(username_mod, "_client_for_exit", lambda client, exit_, browser: fallback)
@@ -149,7 +149,7 @@ async def test_blocked_probes_are_retried_through_the_fallback_exit(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_no_fallback_means_no_retry(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False: _sites())
+    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False, **_: _sites())
     primary = SiteClient({"walled.test": "block"}, proxy=TOR)
     monkeypatch.setenv("RECCE_EXITS", f"tor={TOR}")
 
@@ -240,7 +240,7 @@ async def test_fallback_chain_retries_only_what_earlier_exits_left_blocked(monke
 
     home_url = "socks5h://127.0.0.1:1080"
     monkeypatch.setenv("RECCE_EXITS", f"tor={TOR};home={home_url}")
-    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False: _sites())
+    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False, **_: _sites())
     primary = SiteClient({"walled.test": "block", "fortress.test": "block"})
     tor = SiteClient({"fortress.test": "block"}, proxy=TOR)  # Tor gets past Walled, not Fortress
     home = SiteClient({}, proxy=home_url)  # home gets past everything
@@ -352,7 +352,7 @@ async def test_search_follows_the_learned_exit_order(tmp_path, monkeypatch) -> N
     from recce.core.egress import ExitChain
 
     monkeypatch.setenv("RECCE_EXITS", f"tor={TOR};home={HOME_URL}")
-    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False: _sites())
+    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False, **_: _sites())
     _learned(tmp_path, monkeypatch, {
         "Walled": {TOR_LABEL: "blocked", HOME_LABEL: "healthy"},
         "Fortress": {TOR_LABEL: "blocked", HOME_LABEL: "blocked"},

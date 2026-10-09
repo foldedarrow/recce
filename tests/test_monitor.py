@@ -192,6 +192,16 @@ def test_health_alert_flags_a_burned_exit_and_ignores_noise() -> None:
     assert build_health_alert([{"site": "X", "from": "healthy", "to": "false_positive"}], None, {"blocked": 1}) is None
 
 
+def test_health_alert_ignores_sites_tested_for_the_first_time() -> None:
+    from recce.notify import build_health_alert
+
+    # A new source (Maigret) lands 500 sites, 300 of them blocked: not a burned exit.
+    changes = [{"site": f"M{i}", "from": None, "to": "blocked"} for i in range(300)]
+    assert build_health_alert(changes, {"blocked": 90}, {"blocked": 390}) is None
+    title, _ = build_health_alert(changes, {"blocked": 90}, {"blocked": 440})
+    assert "exit walled more" in title
+
+
 def test_selftest_sends_a_health_alert_only_when_something_broke(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
     from typer.testing import CliRunner
 

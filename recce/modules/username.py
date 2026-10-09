@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Username search across many platforms.
 
-Two site sources are merged at load time:
+Three site sources are merged at load time:
 
 1. **WhatsMyName** (`wmn-data.json`) — the canonical community-maintained
    list (~700+ sites). The schema defines paired-marker detection via
@@ -15,6 +15,11 @@ Two site sources are merged at load time:
    JSON endpoints for SPAs such as ArtStation). Custom entries override
    WMN ones with the same name.
 
+3. **Maigret** (`maigret-data.json.xz`, see `maigret.py`) — ~6,800 more
+   sites, mostly forums, minus any whose domain WMN or the custom list
+   already covers. Searches only run the ones `recce selftest` has verified
+   (``--maigret``, ``RECCE_MAIGRET``).
+
 Detection methods supported:
 - ``wmn``           paired markers (FOUND iff e_code + e_string ∧ ¬m_string)
 - ``status``        HTTP status code list
@@ -22,6 +27,7 @@ Detection methods supported:
 - ``present``       body MUST contain a marker
 - ``redirect_match`` Location header substring
 - ``post_json``     JSON POST + body marker
+- ``maigret``       Maigret's status_code / message / response_url checks
 """
 
 from __future__ import annotations
@@ -228,8 +234,12 @@ def _load_custom_sites() -> list[dict[str, Any]]:
     return list(data.get("sites", []))
 
 
-def _load_sites(*, include_nsfw: bool = False) -> list[dict[str, Any]]:
-    """Merge WMN + recce custom sites. Custom entries override by `name`."""
+def _load_sites(*, include_nsfw: bool = False, maigret: bool = False) -> list[dict[str, Any]]:
+    """Merge WMN + recce custom sites. Custom entries override by `name`.
+
+    With `maigret`, every importable Maigret site whose domain the first two
+    don't cover is appended, verified or not (selftest needs them all;
+    searches gate them with `search_sites`)."""
     wmn_sites = _load_wmn_sites()
     custom_sites = _load_custom_sites()
     # An exact name match is a deliberate override of the WMN entry. A match
@@ -240,6 +250,10 @@ def _load_sites(*, include_nsfw: bool = False) -> list[dict[str, Any]]:
     wmn_kept = [s for s in wmn_sites if s["name"] not in custom_names]
     wmn_lower = {s["name"].lower() for s in wmn_kept}
     merged = wmn_kept + [s for s in custom_sites if s["name"].lower() not in wmn_lower]
+    if maigret:
+        from . import maigret as maigret_db
+
+        merged += maigret_db.merge(merged, maigret_db.load_sites())
 
     if not include_nsfw:
         merged = [s for s in merged if not NSFW_CAT_RE.search(s.get("category", ""))]
@@ -247,13 +261,44 @@ def _load_sites(*, include_nsfw: bool = False) -> list[dict[str, Any]]:
     return merged
 
 
-def site_count(*, include_nsfw: bool = False) -> int:
-    return len(_load_sites(include_nsfw=include_nsfw))
+def site_source(site: dict[str, Any]) -> str:
+    """wmn, custom or maigret."""
+    if site.get("source"):
+        return site["source"]
+    return "wmn" if str(site.get("method", "")).startswith("wmn") else "custom"
 
 
-def category_counts(*, include_nsfw: bool = False) -> dict[str, int]:
+def search_sites(*, include_nsfw: bool = False, maigret: str | None = None) -> list[dict[str, Any]]:
+    """The definitions a username search runs. Maigret sites come in per the
+    `maigret` policy (default $RECCE_MAIGRET, then "verified"): "verified"
+    keeps only those the last selftest found healthy, "all" keeps every one,
+    "off" none."""
+    from . import maigret as maigret_db
+
+    chosen = maigret_db.policy(maigret)
+    sites = _load_sites(include_nsfw=include_nsfw, maigret=chosen != "off")
+    if chosen == "verified":
+        from .selftest import maigret_verified
+
+        verified = maigret_verified([s for s in sites if site_source(s) == maigret_db.SOURCE])
+        sites = [s for s in sites if site_source(s) != maigret_db.SOURCE or s["name"] in verified]
+    return sites
+
+
+def _regex_allows(pattern: str, username: str) -> bool:
+    try:
+        return re.search(pattern, username) is not None
+    except re.error:
+        return False
+
+
+def site_count(*, include_nsfw: bool = False, maigret: str | None = None) -> int:
+    return len(search_sites(include_nsfw=include_nsfw, maigret=maigret))
+
+
+def category_counts(*, include_nsfw: bool = False, maigret: str | None = None) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for site in _load_sites(include_nsfw=include_nsfw):
+    for site in search_sites(include_nsfw=include_nsfw, maigret=maigret):
         category = site.get("category", "general")
         counts[category] = counts.get(category, 0) + 1
     return dict(sorted(counts.items()))
@@ -376,7 +421,33 @@ def _classify(
             return Status.FOUND, None
         return Status.UNKNOWN, f"HTTP {status_code}"
 
+    if method == "maigret":
+        return _classify_maigret(site, status_code, body)
+
     return Status.UNKNOWN, f"unknown method '{method}'"
+
+
+def _classify_maigret(site: dict[str, Any], status_code: int, body: str) -> tuple[Status, str | None]:
+    """Maigret's `process_site_result` + `detect_error_page`: a refusal is
+    "could not check", never "not found"."""
+    for flag, message in (site.get("errors") or {}).items():
+        if body and flag in body:
+            return Status.UNKNOWN, str(message)
+    if status_code in GUARDED_HTTP_STATUSES and not (status_code == 403 and site.get("ignore403")):
+        return Status.UNKNOWN, f"HTTP {status_code} (blocked/rate-limited)"
+    if status_code == 999 or status_code >= 500:
+        return Status.UNKNOWN, f"HTTP {status_code}"
+    presence = site.get("presence") or []
+    present = bool(body) and (not presence or any(marker in body for marker in presence))
+    check = site.get("check")
+    if check == "message":
+        absent = any(marker in body for marker in site.get("absence") or [])
+        return (Status.FOUND if present and not absent else Status.NOT_FOUND), None
+    if check == "status_code":
+        return (Status.FOUND if 200 <= status_code < 300 else Status.NOT_FOUND), None
+    if check == "response_url":
+        return (Status.FOUND if 200 <= status_code < 300 and present else Status.NOT_FOUND), None
+    return Status.UNKNOWN, f"unknown Maigret check '{check}'"
 
 
 # ---------------------------------------------------------------------------
@@ -629,6 +700,7 @@ async def search_username(
     flagged_sites: str | None = None,
     attribute_hits: bool = True,
     fallback_exit: Exit | ExitChain | None = None,
+    maigret: str | None = None,
 ) -> Report:
     """Probe every site for `username`, then run username providers.
 
@@ -640,6 +712,9 @@ async def search_username(
     `flagged_sites` says what to do with definitions the last `recce selftest`
     caught reporting made-up usernames: "skip" (default), "mark" (probe, then
     downgrade), or "off". Defaults to $RECCE_FLAGGED_SITES, then "skip".
+
+    `maigret` picks which Maigret sites run (see `search_sites`): "verified"
+    (default, only those the last selftest found healthy), "all" or "off".
 
     With `attribute_hits` (default), FOUND hits are clustered by corroborating
     profile data (see `attribution.py`), fetching avatars through `client`.
@@ -653,7 +728,7 @@ async def search_username(
         only_categories=only_categories, exclude_categories=exclude_categories,
         include_nsfw=include_nsfw, show_progress=show_progress, per_domain_rate=per_domain_rate,
         guarded_backoff_seconds=guarded_backoff_seconds, verify_found=verify_found,
-        flagged_sites=flagged_sites,
+        flagged_sites=flagged_sites, maigret=maigret,
     )
     use_browser = impersonate and impersonation_available()
     opened: list[Any] = []
@@ -706,13 +781,16 @@ async def _search_username(
     verify_found: bool,
     flagged_sites: str | None = None,
     fallback: list[tuple[Any, str]] | tuple[Any, str] | None = None,
+    maigret: str | None = None,
 ) -> Report:
     if not USERNAME_RE.match(username):
         raise ValueError(
             "Username must be 1–39 chars, start alphanumeric, and contain only letters, digits, '.', '_' or '-'."
         )
 
-    sites = _load_sites(include_nsfw=include_nsfw)
+    sites = search_sites(include_nsfw=include_nsfw, maigret=maigret)
+    # Maigret's regexCheck: the site can't hold this username at all.
+    sites = [s for s in sites if not s.get("regex") or _regex_allows(s["regex"], username)]
     if only_categories:
         sites = [s for s in sites if s.get("category", "general") in only_categories]
     if exclude_categories:
