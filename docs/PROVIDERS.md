@@ -33,7 +33,7 @@ permissions where the host platform supports POSIX file modes.
 | Web search | Pro | Phone | `BRAVE_API_KEY` or `SERPAPI_API_KEY` | Three searches per number (plain, social/classified sites, spam-reputation sites) across all its formats; each page listed once, marked confirmed when its title/snippet contains the number. The number is sent to the search vendor as a query |
 | EmailRep | Free | Email | `EMAILREP_API_KEY` | Provider-native live query; key optional |
 | Shodan | Pro | Domain | `SHODAN_API_KEY` | Provider-native live query; Recce Pro gated; DNS API needs a paid Shodan Membership; free keys fall back to per-IP host lookups (ports, CVEs, org) for the domain's public IPs — Shodan only allows some IPs on the free plan, the rest are listed as restricted |
-| VirusTotal | Pro | Domain, Email | `VIRUSTOTAL_API_KEY` | Gated, query implementation planned |
+| VirusTotal | Pro | Domain, Email | `VIRUSTOTAL_API_KEY` | Provider-native live query (v3): engine verdicts (which engines flag it), reputation, community votes, categories, registrar, creation date, current popularity ranks and DNS records, plus up to 40 known subdomains; email mode looks up the address's domain (consumer webmail skipped). Two calls per domain, one per email — the free API allows 4/min and 500/day |
 | SecurityTrails | Pro | Domain | `SECURITYTRAILS_API_KEY` | Gated, query implementation planned |
 | Censys | Pro | Domain | `CENSYS_API_TOKEN`, optional `CENSYS_ORG_ID` | Provider-native live query (Platform v3): services on the domain's public IPs + TLS cert on :443; free-tier tokens work without an org ID |
 
@@ -80,3 +80,6 @@ gate rows for the listed provider IDs.
   the domain label.
 - Shodan uses the official DNS domain endpoint for domain intelligence. Shodan
   bills this as one query credit per lookup.
+- VirusTotal sends the key only as the `x-apikey` header. A 429 is reported as
+  a rate-limit error and stops the run's remaining VirusTotal call; nothing is
+  retried, so a batch of domains spends at most two requests each.

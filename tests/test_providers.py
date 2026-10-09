@@ -24,8 +24,9 @@ def _isolate_pro_entitlement(tmp_path, monkeypatch):  # type: ignore[no-untyped-
     yield
 
 
-# Keyless email providers; tests targeting one specific provider skip these.
-OTHER_FREE_EMAIL = {"xposedornot", "leakcheck", "proton", "github-commits", "hudsonrock"}
+# Keyless email providers, plus VirusTotal (its not-configured skip hit);
+# tests targeting one specific provider skip these.
+OTHER_FREE_EMAIL = {"xposedornot", "leakcheck", "proton", "github-commits", "hudsonrock", "virustotal"}
 
 
 def _settings(**overrides) -> Settings:  # type: ignore[no-untyped-def]

@@ -197,6 +197,10 @@ company pivots, Wayback first-seen plus the latest archived about/contact/
 team/privacy pages, Hudson Rock infostealer counts (infected employees and
 users, and the domain URLs their logins were stolen for), and, with
 `HUNTER_API_KEY`, the email address format (one Hunter credit per domain).
+With `VIRUSTOTAL_API_KEY` (Pro) it adds VirusTotal's verdict (engines that
+flag the domain, reputation, categories, popularity ranks) and up to 40 known
+subdomains, two API calls per domain; `recce email` looks up the address's
+domain the same way (one call, consumer webmail skipped).
 Results start with a compact summary card so the key facts are visible before
 the detailed evidence table.
 
@@ -292,7 +296,7 @@ BRAVE_API_KEY=...       # Pro-gated; phone web search (or SERPAPI_API_KEY)
 EMAILREP_API_KEY=...    # EmailRep reputation — free / paid
 COMPANIES_HOUSE_KEY=... # Optional UK company lookup for recce domain
 SHODAN_API_KEY=...      # Pro-gated; DNS API needs a paid Shodan Membership
-VIRUSTOTAL_API_KEY=...  # Pro-gated; query implementation planned
+VIRUSTOTAL_API_KEY=...  # Pro-gated; domain reputation + subdomains (free: 4/min, 500/day)
 SECURITYTRAILS_API_KEY=...
 CENSYS_API_TOKEN=...    # Pro-gated; Censys Platform personal access token
 CENSYS_ORG_ID=...       # optional; paid Censys plans only

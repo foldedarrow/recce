@@ -5,7 +5,7 @@ from recce.config import Settings
 from recce.core.result import Status
 from recce.providers import query_registered_providers
 
-ALL_EMAIL = {"hibp", "hunter", "emailrep", "xposedornot", "leakcheck", "proton", "github-commits", "hudsonrock"}
+ALL_EMAIL = {"hibp", "hunter", "emailrep", "xposedornot", "leakcheck", "proton", "github-commits", "hudsonrock", "virustotal"}
 
 
 class Response:
