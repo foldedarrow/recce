@@ -9,6 +9,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **SecurityTrails provider** (Pro, `SECURITYTRAILS_API_KEY`): `recce domain`
+  lists SecurityTrails' subdomains (inactive ones included) and the domain's
+  A record history — every IP it pointed at, the hosting organisations and
+  first/last-seen dates, oldest first, which often exposes the origin behind
+  a CDN. Two queries per domain against the small free monthly quota; a 429
+  or auth error is reported and skips the second. Previously a placeholder
+  that `doctor` listed as active.
 - **VirusTotal provider** (Pro, `VIRUSTOTAL_API_KEY`): `recce domain` reports
   VirusTotal's verdict — how many engines flag the domain and which, its
   reputation and community votes, categories, registrar, creation date,

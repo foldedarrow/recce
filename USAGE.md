@@ -201,6 +201,9 @@ With `VIRUSTOTAL_API_KEY` (Pro) it adds VirusTotal's verdict (engines that
 flag the domain, reputation, categories, popularity ranks) and up to 40 known
 subdomains, two API calls per domain; `recce email` looks up the address's
 domain the same way (one call, consumer webmail skipped).
+With `SECURITYTRAILS_API_KEY` (Pro) it adds SecurityTrails' subdomain list
+(inactive ones included) and the domain's A record history, which often shows
+the origin IPs used before a CDN; two queries per domain.
 Results start with a compact summary card so the key facts are visible before
 the detailed evidence table.
 
@@ -297,7 +300,7 @@ EMAILREP_API_KEY=...    # EmailRep reputation — free / paid
 COMPANIES_HOUSE_KEY=... # Optional UK company lookup for recce domain
 SHODAN_API_KEY=...      # Pro-gated; DNS API needs a paid Shodan Membership
 VIRUSTOTAL_API_KEY=...  # Pro-gated; domain reputation + subdomains (free: 4/min, 500/day)
-SECURITYTRAILS_API_KEY=...
+SECURITYTRAILS_API_KEY=... # Pro-gated; subdomains + A record history (2 queries/domain)
 CENSYS_API_TOKEN=...    # Pro-gated; Censys Platform personal access token
 CENSYS_ORG_ID=...       # optional; paid Censys plans only
 ```

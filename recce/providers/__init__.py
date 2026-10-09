@@ -21,6 +21,7 @@ from .leakcheck import LeakCheckProvider
 from .numverify import NumVerifyProvider
 from .profiles import PROFILE_PROVIDERS
 from .proton import ProtonKeyProvider
+from .securitytrails import SecurityTrailsProvider
 from .shodan import ShodanProvider
 from .virustotal import VirusTotalProvider
 from .vonage import VonageNumberInsightProvider
@@ -55,16 +56,7 @@ PROVIDERS: tuple[Provider, ...] = (
     EmailRepProvider(),
     ShodanProvider(),
     VirusTotalProvider(),
-    Provider(
-        id="securitytrails",
-        name="SecurityTrails",
-        tier="pro",
-        enriches=("domain",),
-        config_keys=("SECURITYTRAILS_API_KEY",),
-        setting_attrs=("securitytrails_api_key",),
-        homepage="https://securitytrails.com/corp/api",
-        notes="passive DNS and subdomain enrichment",
-    ),
+    SecurityTrailsProvider(),
     CensysProvider(),
 )
 

@@ -34,7 +34,7 @@ permissions where the host platform supports POSIX file modes.
 | EmailRep | Free | Email | `EMAILREP_API_KEY` | Provider-native live query; key optional |
 | Shodan | Pro | Domain | `SHODAN_API_KEY` | Provider-native live query; Recce Pro gated; DNS API needs a paid Shodan Membership; free keys fall back to per-IP host lookups (ports, CVEs, org) for the domain's public IPs — Shodan only allows some IPs on the free plan, the rest are listed as restricted |
 | VirusTotal | Pro | Domain, Email | `VIRUSTOTAL_API_KEY` | Provider-native live query (v3): engine verdicts (which engines flag it), reputation, community votes, categories, registrar, creation date, current popularity ranks and DNS records, plus up to 40 known subdomains; email mode looks up the address's domain (consumer webmail skipped). Two calls per domain, one per email — the free API allows 4/min and 500/day |
-| SecurityTrails | Pro | Domain | `SECURITYTRAILS_API_KEY` | Gated, query implementation planned |
+| SecurityTrails | Pro | Domain | `SECURITYTRAILS_API_KEY` | Provider-native live query: subdomains including inactive ones, and historical A records (IPs, hosting orgs, first/last seen — pre-CDN origin IPs); current DNS is left to recce's own lookups. Two queries per domain against a small free monthly quota; a 429 or auth error stops the second |
 | Censys | Pro | Domain | `CENSYS_API_TOKEN`, optional `CENSYS_ORG_ID` | Provider-native live query (Platform v3): services on the domain's public IPs + TLS cert on :443; free-tier tokens work without an org ID |
 
 ## Recce Pro Entitlement
