@@ -28,6 +28,8 @@ def main() -> None:
         )
         sys.exit(1)
 
+    from recce.gui.theme import THEME_FLAGS
+
     app_path = Path(str(resources.files("recce.gui").joinpath("app.py")))
     # Hand off argv to streamlit's CLI.
     args = [
@@ -36,6 +38,7 @@ def main() -> None:
         "--server.headless", "true",
         "--browser.gatherUsageStats", "false",
         "--server.runOnSave", "false",
+        *THEME_FLAGS,  # vantage's dark palette; later --theme.* flags still win
         *sys.argv[1:],
     ]
     sys.argv = args

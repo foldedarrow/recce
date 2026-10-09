@@ -13,7 +13,7 @@ APP = str(Path(__file__).resolve().parents[1] / "recce" / "gui" / "app.py")
 
 
 def _pivot_buttons(at: AppTest) -> list:  # type: ignore[type-arg]
-    return [b for b in at.button if b.label.startswith("🔎")]
+    return [b for b in at.button if (b.key or "").startswith("pivot-")]
 
 
 def test_gui_follow_up_buttons_chain_searches_without_deep(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -62,7 +62,7 @@ def test_gui_follow_up_buttons_chain_searches_without_deep(monkeypatch, tmp_path
     assert deep_calls == ["root@example.test"]
 
     [follow_username] = _pivot_buttons(at)
-    assert follow_username.label == "🔎 username: root"
+    assert follow_username.label == "username: root"
     follow_username.click().run()
     assert not at.exception
     assert at.session_state["mode"] == "Username"
