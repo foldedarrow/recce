@@ -22,6 +22,7 @@ from .numverify import NumVerifyProvider
 from .profiles import PROFILE_PROVIDERS
 from .proton import ProtonKeyProvider
 from .shodan import ShodanProvider
+from .virustotal import VirusTotalProvider
 from .vonage import VonageNumberInsightProvider
 from .wayback_profiles import WaybackProfilesProvider
 from .websearch import WebSearchProvider
@@ -53,16 +54,7 @@ PROVIDERS: tuple[Provider, ...] = (
     WebSearchProvider(),
     EmailRepProvider(),
     ShodanProvider(),
-    Provider(
-        id="virustotal",
-        name="VirusTotal",
-        tier="pro",
-        enriches=("domain", "email"),
-        config_keys=("VIRUSTOTAL_API_KEY",),
-        setting_attrs=("virustotal_api_key",),
-        homepage="https://docs.virustotal.com/reference/overview",
-        notes="domain and indicator reputation enrichment",
-    ),
+    VirusTotalProvider(),
     Provider(
         id="securitytrails",
         name="SecurityTrails",

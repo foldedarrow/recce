@@ -9,6 +9,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **VirusTotal provider** (Pro, `VIRUSTOTAL_API_KEY`): `recce domain` reports
+  VirusTotal's verdict — how many engines flag the domain and which, its
+  reputation and community votes, categories, registrar, creation date,
+  current popularity ranks and last DNS records — plus up to 40 known
+  subdomains, and the domain summary card gains a Reputation row.
+  `recce email` looks up the address's domain (consumer webmail is skipped).
+  Two API calls per domain and one per email, within the free API's
+  4 requests/min and 500/day; a 429 is reported as a rate-limit error.
+  Previously VirusTotal was a placeholder that `doctor` listed as active.
+
 - **Maigret sites.** [Maigret](https://github.com/soxoj/maigret)'s site database
   (MIT, bundled as `recce/data/maigret-data.json.xz` with its licence) is a
   third username source: ~6,800 sites WMN and the custom list don't cover,

@@ -140,8 +140,12 @@ client). Still open, below.
   searches per number return the pages that mention it, confirmed when the
   snippet contains the digits. Google CSE is not supported (closed to new
   customers).
-- **Domain:** implement the VirusTotal and SecurityTrails placeholders
-  (needs keys to verify live).
+- **Domain:** VirusTotal — **shipped** (Pro, `recce/providers/virustotal.py`):
+  engine verdicts, reputation, categories, registrar, popularity ranks and DNS
+  records, plus up to 40 known subdomains (2 calls per domain; email mode
+  looks up the mail domain, 1 call). Verified live 2026-10-09 on example.com
+  (0/92) and wicar.org (1 malicious, 1 suspicious). SecurityTrails placeholder
+  still open (needs a key to verify live).
 
 ### 7. Reporting — shipped (HTML dossier + monitoring alerts)
 `recce/core/dossier.py`: summary, identity graph (pivot chain), clusters,

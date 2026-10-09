@@ -20,7 +20,7 @@ def build_domain_summary(report: Report) -> list[DomainSummaryRow]:
     if report.query_type != "domain":
         return []
 
-    return [
+    rows = [
         DomainSummaryRow("Domain", report.query),
         DomainSummaryRow("Registered", _registered(report.hits)),
         DomainSummaryRow("Registrar", _registrar(report.hits)),
@@ -31,6 +31,10 @@ def build_domain_summary(report: Report) -> list[DomainSummaryRow]:
         DomainSummaryRow("Subdomains", _subdomains(report.hits)),
         DomainSummaryRow("Socials", _socials(report.hits)),
     ]
+    reputation = _reputation(report.hits)
+    if reputation:
+        rows.insert(1, DomainSummaryRow("Reputation", reputation))
+    return rows
 
 
 def _hit(hits: list[Hit], *, source: str | None = None, category: str | None = None) -> Hit | None:
@@ -42,6 +46,23 @@ def _hit(hits: list[Hit], *, source: str | None = None, category: str | None = N
         if hit.status is Status.FOUND:
             return hit
     return None
+
+
+def _reputation(hits: list[Hit]) -> str | None:
+    """VirusTotal's verdict, shown only when that provider ran."""
+    vt = _hit(hits, source="VirusTotal", category="reputation")
+    if not vt:
+        return None
+    stats = vt.extra.get("last_analysis_stats") or {}
+    engines = sum(int(v or 0) for v in stats.values())
+    malicious = int(stats.get("malicious") or 0)
+    suspicious = int(stats.get("suspicious") or 0)
+    text = f"VirusTotal: {malicious}/{engines} malicious"
+    if suspicious:
+        text += f", {suspicious} suspicious"
+    if vt.extra.get("reputation") is not None:
+        text += f" (reputation {vt.extra['reputation']})"
+    return text
 
 
 def _registered(hits: list[Hit]) -> str:
