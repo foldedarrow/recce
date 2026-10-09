@@ -89,7 +89,15 @@ not yet a link signal; only corroborating profile data is.
   timeouts, 91 TLS, 60 resets, the rest 5xx), 1 with no known account. So
   5,684 sites (84%) are usable and searches run exactly those
   (`--maigret verified`, the default).
-  MAIGRET_TIMING
+  Probe time, `recce username torvalds` on the box (Proton exit, Tor/home
+  fallbacks, providers on): 297 s before this change (701 sites, 147 found);
+  261 s with Maigret off and 485 s with the verified Maigret sites (6,385
+  sites, 223 found, none downgraded by the canary). The first Maigret
+  measurement was 944 s: curl_cffi's `AsyncSession` caps a session at 10
+  transfers (`max_clients`), so impersonated probes never ran more than 10 at
+  once whatever `RECCE_CONCURRENCY` said. Fixed with the import; that alone
+  took the 6,400-site probe phase from 670 s to 238 s. `--maigret off` keeps
+  the old site set. The weekly selftest now runs ~50 min (unit timeout 3 h).
 
 ### 5. Egress control — shipped
 `recce/core/egress.py`: named exits, per-module exit selection, a username

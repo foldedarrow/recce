@@ -218,6 +218,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Username probes with a browser fingerprint (curl_cffi) ran at most 10 at a
+  time whatever `RECCE_CONCURRENCY` said (curl_cffi's default `max_clients`);
+  they now use the configured concurrency. A page whose bytes don't match its
+  declared charset is decoded leniently instead of aborting the search, and
+  one unexpected error in a probe no longer sinks the whole search or selftest.
 - Phone lookups crashed the GUI (`AttributeError: 'str' object has no attribute
   'get'`), and could crash the CLI clusters panel and the HTML dossier: Ofcom
   hits stored their licence credit under `extra["attribution"]`, the key that
