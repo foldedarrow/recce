@@ -1,6 +1,6 @@
-# One-shot: refresh the WhatsMyName site database. Paired with recce-update.timer.
+# One-shot: refresh the WhatsMyName and Maigret site databases and Ofcom numbering. Paired with recce-update.timer.
 [Unit]
-Description=recce: refresh WhatsMyName database
+Description=recce: refresh site databases (WhatsMyName, Maigret) and Ofcom numbering
 After=network-online.target
 Wants=network-online.target
 [Service]

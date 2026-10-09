@@ -164,8 +164,11 @@ class ImpersonatingClient:
             from curl_cffi import CurlOpt
 
             options[CurlOpt.IPRESOLVE] = 1  # CURL_IPRESOLVE_V4
+        # curl_cffi caps a session at 10 in-flight transfers (max_clients)
+        # whatever the semaphore allows; match it to the configured concurrency.
         self._session = AsyncSession(
-            impersonate=impersonate, proxy=proxy, timeout=timeout, curl_options=options or None
+            impersonate=impersonate, proxy=proxy, timeout=timeout, curl_options=options or None,
+            max_clients=max(1, max_concurrency),
         )
 
     @classmethod

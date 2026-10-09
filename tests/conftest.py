@@ -13,6 +13,16 @@ def _isolated_selftest_state(tmp_path, monkeypatch):  # type: ignore[no-untyped-
 
 
 @pytest.fixture(autouse=True)
+def _isolated_maigret_cache(tmp_path, monkeypatch):  # type: ignore[no-untyped-def]
+    """Searches prefer ~/.cache/recce's Maigret data; tests use the bundled
+    snapshot (and the default policy) unless they say otherwise."""
+    from recce.modules import maigret
+
+    monkeypatch.setattr(maigret, "CACHED_MAIGRET", tmp_path / "maigret-data.json")
+    monkeypatch.delenv(maigret.POLICY_ENV, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _isolated_ofcom_cache(tmp_path, monkeypatch):  # type: ignore[no-untyped-def]
     """Phone lookups prefer ~/.cache/recce's Ofcom index; tests use the
     bundled snapshot or their own fixture index."""

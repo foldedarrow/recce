@@ -43,6 +43,11 @@ from .licensing import has_pro_entitlement, pro_licence_path
 from .modules.domain import DOMAIN_CATEGORIES, domain_consent_error, search_domain
 from .modules.email import search_email
 from .modules.email_deep import deep_email_probes
+from .modules.maigret import MAIGRET_REMOTE
+from .modules.maigret import POLICIES as MAIGRET_POLICIES
+from .modules.maigret import cache_status as maigret_cache_status
+from .modules.maigret import clear_cache as clear_maigret_cache
+from .modules.maigret import refresh_data as refresh_maigret_data
 from .modules.ofcom import (
     BUNDLED_INDEX,
     OFCOM_NUMBERING_PAGE,
@@ -67,6 +72,7 @@ from .modules.selftest import (
     run_selftest,
     save_report,
     select_sites,
+    source_summary,
 )
 from .modules.username import (
     DEFAULT_PER_DOMAIN_RATE,
@@ -401,6 +407,11 @@ def cmd_username(
         help="Sites the last `recce selftest` caught reporting made-up usernames: "
         "skip (default), mark (probe but downgrade hits) or off. Env: RECCE_FLAGGED_SITES.",
     ),
+    maigret: str | None = typer.Option(
+        None, "--maigret",
+        help="Maigret sites to probe: verified (default; those `recce selftest` found healthy), "
+        "all (unverified, slow) or off. Env: RECCE_MAIGRET.",
+    ),
     recursive: bool = typer.Option(
         False, "--recursive", "-R",
         help="Follow usernames/emails found in hits with passive follow-up searches.",
@@ -419,6 +430,8 @@ def cmd_username(
     settings = Settings.load()
     if flagged_sites is not None and flagged_sites.lower() not in FLAGGED_POLICIES:
         raise typer.BadParameter(f"must be one of {', '.join(FLAGGED_POLICIES)}", param_hint="--flagged-sites")
+    if maigret is not None and maigret.lower() not in MAIGRET_POLICIES:
+        raise typer.BadParameter(f"must be one of {', '.join(MAIGRET_POLICIES)}", param_hint="--maigret")
     if no_providers:
         settings = settings.without_provider_integrations()
     _check_case(case)
@@ -438,7 +451,7 @@ def cmd_username(
     skip_provider_ids = _parse_csv_set(skip_provider)
     targets = _read_targets(username, file)
 
-    n_sites = site_count(include_nsfw=nsfw)
+    n_sites = site_count(include_nsfw=nsfw, maigret=maigret)
     sub = f"{len(targets)} target(s) · {n_sites} sites" + (" · [yellow]NSFW ON[/]" if nsfw else "")
     sub += f" · exit: {exit_.label}" + (f" · fallback: {fallback.label}" if fallback else "")
     banner("recce › username", subtitle=sub)
@@ -464,6 +477,7 @@ def cmd_username(
                     skip_provider_ids=skip_provider_ids,
                     flagged_sites=flagged_sites,
                     fallback_exit=fallback,
+                    maigret=maigret,
                 )
 
             return await _run_bounded(run_one, targets, target_concurrency)
@@ -483,6 +497,7 @@ def cmd_username(
         "impersonate": impersonate,
         "flagged_sites": flagged_sites,
         "fallback_exit": fallback,
+        "maigret": maigret,
     }
     all_reports = _render_and_pivot(
         reports,
@@ -850,17 +865,18 @@ def cmd_domain(
     _maybe_export(reports, json_out, csv_out)
 
 
-UPDATE_SOURCES = ("wmn", "ofcom")
+UPDATE_SOURCES = ("wmn", "maigret", "ofcom")
+_UPDATE_LABELS = {"wmn": "WhatsMyName", "maigret": "Maigret", "ofcom": "Ofcom numbering"}
 
 
 @app.command(
     "update",
-    help="Refresh the WhatsMyName site database and Ofcom UK numbering data from upstream.",
+    help="Refresh the WhatsMyName and Maigret site databases and Ofcom UK numbering data from upstream.",
 )
 def cmd_update(
     reset_cache: bool = typer.Option(False, "--reset-cache", help="Delete cached data before updating."),
     only: str | None = typer.Option(
-        None, "--only", help="Refresh just one source: wmn or ofcom.", case_sensitive=False
+        None, "--only", help="Refresh just one source: wmn, maigret or ofcom.", case_sensitive=False
     ),
     bundled: bool = typer.Option(
         False,
@@ -875,9 +891,7 @@ def cmd_update(
             console.print(f"[red]error:[/] --only must be one of: {', '.join(UPDATE_SOURCES)}")
             raise typer.Exit(2)
         sources = (only.lower(),)
-    banner("recce › update", subtitle="fetching " + " + ".join(
-        {"wmn": "WhatsMyName", "ofcom": "Ofcom numbering"}[s] for s in sources
-    ))
+    banner("recce › update", subtitle="fetching " + " + ".join(_UPDATE_LABELS[s] for s in sources))
 
     async def run(source: str) -> tuple[int, int]:
         async with http_client(
@@ -887,12 +901,16 @@ def cmd_update(
         ) as client:
             if source == "wmn":
                 return await refresh_wmn_data(client)
+            if source == "maigret":
+                return await refresh_maigret_data(client)
             return await refresh_ofcom_data(client, dest=BUNDLED_INDEX if bundled else None)
 
     failed = False
     for source in sources:
         if reset_cache:
-            cleared = clear_wmn_cache() if source == "wmn" else clear_ofcom_cache()
+            cleared = {"wmn": clear_wmn_cache, "maigret": clear_maigret_cache}.get(
+                source, clear_ofcom_cache
+            )()
             if cleared:
                 console.print(f"[dim]Removed cached {source} data before refresh.[/]")
         try:
@@ -906,6 +924,11 @@ def cmd_update(
         if source == "wmn":
             console.print(
                 f"[bold green]✓[/] WMN refreshed: was {before} sites, now [bold]{after}[/] ({delta_str})."
+            )
+        elif source == "maigret":
+            console.print(
+                f"[bold green]✓[/] Maigret refreshed: was {before} importable sites, now "
+                f"[bold]{after}[/] ({delta_str}). Searches use them once `recce selftest` verifies them."
             )
         else:
             status = index_status()
@@ -939,6 +962,9 @@ def cmd_selftest(
         None, "--only", help="Comma-separated site names to test (case-insensitive).",
     ),
     nsfw: bool = typer.Option(False, "--nsfw", help="Include adult / NSFW sites."),
+    source: str | None = typer.Option(
+        None, "--source", help="Comma-separated site sources to test: wmn, custom, maigret.",
+    ),
     json_output: bool = typer.Option(
         False, "--json", help="Print the full report as JSON instead of tables.",
     ),
@@ -980,6 +1006,7 @@ def cmd_selftest(
     chain = fallback_exits(_fallback_for(fallback_proxy)) if exits else ()
     sites = select_sites(
         categories=_parse_csv_set(category), names=_parse_csv_set(only), include_nsfw=nsfw,
+        sources=_parse_csv_set(source),
     )
     if not sites:
         console.print("[red]error:[/] no sites match those filters")
@@ -1136,6 +1163,14 @@ def cmd_doctor(
         console.print(f"  [dim]WMN cache:[/] {validity}{site_text}  [dim]{cache['path']}[/]")
     else:
         console.print("  [dim]WMN cache:[/] using bundled snapshot")
+    mcache = maigret_cache_status()
+    n_maigret_all = site_count(include_nsfw=False, maigret="all") - site_count(include_nsfw=False, maigret="off")
+    n_maigret_ok = site_count(include_nsfw=False, maigret="verified") - site_count(include_nsfw=False, maigret="off")
+    where = mcache["path"] if mcache["exists"] and mcache["valid"] else "bundled snapshot"
+    console.print(
+        f"  [dim]Maigret:[/] {n_maigret_ok} of {n_maigret_all} sites verified by selftest "
+        f"(searches run only those; `--maigret all` runs every one)  [dim]{where}[/]"
+    )
     ofcom = index_status()
     if ofcom["loaded"]:
         where = ofcom["path"] if ofcom["cached"] else "bundled snapshot"
@@ -1155,6 +1190,13 @@ def cmd_doctor(
             f"(skipped in searches) · {counts.get('false_negative', 0)} false-negative · "
             f"{counts.get('blocked', 0)} blocked"
         )
+        for src, src_counts in sorted(source_summary().items()):
+            console.print(
+                f"    [dim]{src}:[/] {src_counts.get('healthy', 0)} healthy · "
+                f"{src_counts.get('false_positive', 0)} false-positive · "
+                f"{src_counts.get('false_negative', 0)} false-negative · "
+                f"{src_counts.get('blocked', 0)} blocked · {src_counts.get('error', 0)} error"
+            )
     else:
         console.print("  [dim]site selftest:[/] never run (`recce selftest`)")
     console.print("\n[dim]Exits:[/]")
@@ -1364,6 +1406,7 @@ async def _doctor_network(settings: Settings, proxy: str | None = None) -> list[
     checks = [
         ("example.com", "https://example.com"),
         ("WhatsMyName data", WMN_REMOTE),
+        ("Maigret data", MAIGRET_REMOTE),
         ("Ofcom numbering", OFCOM_NUMBERING_PAGE),
         ("GitHub API", "https://api.github.com/rate_limit"),
         ("crt.sh", "https://crt.sh/?q=example.com&output=json"),

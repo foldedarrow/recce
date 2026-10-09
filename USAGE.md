@@ -12,7 +12,7 @@ You have **six commands**. Here's what each one does and how to use it.
 
 ## 1. `recce username <handle>`
 
-Search 720+ platforms in parallel for an account using that username. Backed by WhatsMyName plus a curated custom list.
+Search 720+ platforms in parallel for an account using that username. Backed by WhatsMyName plus a curated custom list, plus the Maigret sites `recce selftest` has verified (see below).
 
 ```bash
 recce username foldedarrow                              # basic
@@ -24,7 +24,17 @@ recce username --file handles.txt --target-concurrency 2 # batch: one handle per
 recce username foldedarrow --per-domain-rate 1.5        # throttle probes to each domain
 recce username foldedarrow --csv hits.csv               # export CSV
 recce username foldedarrow --show-misses                # show every site, not just hits
+recce username foldedarrow --maigret off                # WMN + custom only
 ```
+
+**Maigret sites.** recce also imports [Maigret](https://github.com/soxoj/maigret)'s
+site database (MIT): ~6,800 sites WMN and the custom list don't cover, most of
+them forums. They start switched off. `recce selftest` checks each one with its
+known account and a made-up username, and a search runs only those whose last
+verdict was healthy (directly, or through a fallback exit) within 30 days:
+`--maigret verified`, the default. `--maigret all` runs every one, unverified
+and slow; `--maigret off` none. Env: `RECCE_MAIGRET`. With no selftest run yet,
+searches use WMN and the custom list only.
 
 Username searches also check the Wayback Machine for archived profile pages
 on 16 major sites. An archived profile shows the account existed at that
@@ -209,11 +219,11 @@ Categories: `ownership`, `network`, `email`, `web`, `subs`, `companies`, `waybac
 
 ## 5. `recce update`
 
-Refresh the WhatsMyName site database and the Ofcom UK numbering index from upstream. Run this every few months: the WMN community keeps adding platforms and fixing detection markers, and Ofcom republishes number allocations every Wednesday. Refreshed data lands in `~/.cache/recce/` and takes precedence over the bundled snapshots.
+Refresh the WhatsMyName and Maigret site databases and the Ofcom UK numbering index from upstream. Run this every few months: the WMN community keeps adding platforms and fixing detection markers, and Ofcom republishes number allocations every Wednesday. Refreshed data lands in `~/.cache/recce/` and takes precedence over the bundled snapshots.
 
 ```bash
 recce update
-recce update --only ofcom          # or --only wmn
+recce update --only ofcom          # or --only wmn / --only maigret
 recce update --reset-cache
 recce update --only ofcom --bundled   # maintainers: rewrite recce/data/ofcom-numbering.json.xz
 ```
@@ -330,7 +340,7 @@ If you want a real Mac app with a Dock icon and no browser chrome, see the READM
 
 ### What's in the GUI
 
-- **Sidebar** — mode selector, API-key status, site count, "Refresh WMN data" button.
+- **Sidebar** — mode selector, API-key status, site count, "Refresh site data" button (WhatsMyName + Maigret).
 - **API Keys tab** — provider status table and local key storage at `~/.config/recce/.env`.
 - **Username tab** — text input, NSFW toggle, category include/exclude filters, run button. Confirmed hits in cards above the full table.
 - **Email tab** — text input, consent-gated deep-mode toggle, deep concurrency/retry controls.

@@ -76,8 +76,28 @@ not yet a link signal; only corroborating profile data is.
   which usually means the exit IP lost reputation. `error`/`blocked` flips
   alone never alert (they flap with the IP). `--no-notify` turns it off.
 - Next: more `known` accounts for WMN sites whose only one has gone.
-- Consider importing Maigret's site DB (MIT) as a third source — ~3,000 sites
-  vs WMN's ~700 — gated behind the same canary verification.
+- Shipped: Maigret's site DB (MIT, `recce/modules/maigret.py`) as a third
+  source. Its data.json now holds 8,077 entries; 7,237 translate faithfully
+  (left out: 698 disabled, numeric-ID and Tor/I2P/DNS checks, POST and
+  session-token checks, similar-name searches, regexes a canary can't pass)
+  and 6,809 remain after de-duplicating against WMN/custom by normalised
+  domain. Every one is off until `recce selftest` verifies it; `recce update`
+  refreshes it like WMN. First selftest, 2026-10-09 via Proton (46.29.25.84),
+  42 min: **5,637 healthy** (2,746 of them forums, 944 coding), 33 false
+  positive, 371 false negative, 264 blocked (47 of those healthy through a
+  fallback exit: home 31, Tor 16), 503 error (140 DNS refused by Pi-hole, 121
+  timeouts, 91 TLS, 60 resets, the rest 5xx), 1 with no known account. So
+  5,684 sites (84%) are usable and searches run exactly those
+  (`--maigret verified`, the default).
+  Probe time, `recce username torvalds` on the box (Proton exit, Tor/home
+  fallbacks, providers on): 297 s before this change (701 sites, 147 found);
+  261 s with Maigret off and 485 s with the verified Maigret sites (6,385
+  sites, 223 found, none downgraded by the canary). The first Maigret
+  measurement was 944 s: curl_cffi's `AsyncSession` caps a session at 10
+  transfers (`max_clients`), so impersonated probes never ran more than 10 at
+  once whatever `RECCE_CONCURRENCY` said. Fixed with the import; that alone
+  took the 6,400-site probe phase from 670 s to 238 s. `--maigret off` keeps
+  the old site set. The weekly selftest now runs ~50 min (unit timeout 3 h).
 
 ### 5. Egress control — shipped
 `recce/core/egress.py`: named exits, per-module exit selection, a username

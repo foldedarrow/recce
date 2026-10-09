@@ -17,7 +17,7 @@ Recce Pro is a separate product.
 
 ## Features
 
-- **Username search** across **720+ platforms** — backed by the canonical [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) database (~700 sites) merged with a hand-curated list of bespoke probes for places WMN doesn't cover (multi-instance Mastodon, Bluesky AT-Proto, redirect-marker detection for Bandcamp/Substack/Wordpress). Refresh with `recce update`. Adult sites are gated behind `--nsfw`.
+- **Username search** across **720+ platforms** — backed by the canonical [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) database (~700 sites) merged with a hand-curated list of bespoke probes for places WMN doesn't cover (multi-instance Mastodon, Bluesky AT-Proto, redirect-marker detection for Bandcamp/Substack/Wordpress). Maigret's site database (~6,800 more sites, mostly forums) is imported too, each site switched on only once `recce selftest` has verified it against a known account and a made-up username. Refresh with `recce update`. Adult sites are gated behind `--nsfw`.
 - **Email lookups** — Gravatar (with profile + linked accounts), DNS/MX provider detection, [EmailRep](https://emailrep.io) reputation & associated profiles, [Have I Been Pwned](https://haveibeenpwned.com) breach history, keyless breach checks via [XposedOrNot](https://xposedornot.com) and [LeakCheck](https://leakcheck.io) (incl. infostealer logs), Proton account detection with key-creation date, GitHub commit search (email → GitHub logins, real names, repos), [Hunter.io](https://hunter.io) verification, plus a consent-gated `--deep` mode that probes ~115 sites' sign-up/sign-in lookups (via [user-scanner](https://github.com/kaifcodec/user-scanner), plus [holehe](https://github.com/megadose/holehe) for sites it lacks; both audited 2026-10-08, and modules that could notify the owner or are broken never run) to discover registered accounts, re-checking every hit with a made-up address at the same domain. Deep mode also checks whether the address is a **Microsoft account** (any domain), and how it signs in, without contacting the owner.
 - **Phone number lookups** — full parse via Google's `libphonenumber` (region, type, carrier, timezone), offline [Ofcom numbering data](https://www.ofcom.org.uk/phones-and-broadband/phone-numbers/numbering-data) for +44 numbers (the provider the block was originally allocated to, block status, area), optional [NumVerify](https://numverify.com) carrier verification, and manual-pivot rows with clickable URLs (WhatsApp, Google web search, Truecaller, Sync.me).
 - **Domain profiles** — a top-level summary card plus ownership, DNS, ASN, email infrastructure, Microsoft 365 realm fingerprinting, web metadata, TLS certificate details, passive subdomain discovery, Wayback first-seen, and company-register pivots.
@@ -155,6 +155,7 @@ Domain profiling is passive by default. Active subdomain bruteforce requires
 ```bash
 recce doctor       # show API keys, cache state, and network reachability
 recce selftest     # check every username site definition (known account + made-up one)
+recce selftest --source maigret   # just the imported Maigret sites
 recce doctor --no-network
 recce --version
 ```
@@ -346,3 +347,6 @@ and "Telephone area codes" page, © Ofcom, reproduced under Ofcom's
 [copyright and re-use terms](https://www.ofcom.org.uk/about-ofcom/our-website/copyright).
 `recce/data/wmn-data.json` is from
 [WhatsMyName](https://github.com/WebBreacher/WhatsMyName).
+`recce/data/maigret-data.json.xz` is Maigret's unmodified `data.json` from
+[Maigret](https://github.com/soxoj/maigret), MIT-licensed, © Soxoj; the
+notice is in [`recce/data/MAIGRET_LICENSE`](recce/data/MAIGRET_LICENSE).

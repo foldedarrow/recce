@@ -198,7 +198,7 @@ GOOD = {**SITE, "name": "Good", "url": "https://good.test/{u}"}
 
 
 async def _search(monkeypatch, policy: str | None):  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False: [SITE, GOOD])
+    monkeypatch.setattr(username_mod, "_load_sites", lambda include_nsfw=False, **_: [SITE, GOOD])
     selftest.save_report(_report({"Example": _entry(selftest.FALSE_POSITIVE)}))
     client = FakeClient({}, default=200)
     report = await username_mod._search_username(
@@ -249,7 +249,7 @@ def test_annotate_marks_misses_from_false_negative_sites() -> None:
 def test_select_sites_borrows_wmn_known_accounts(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     custom = {**SITE, "name": "GitLab"}
     custom.pop("known")
-    monkeypatch.setattr(selftest, "_load_sites", lambda include_nsfw=False: [custom, GOOD])
+    monkeypatch.setattr(selftest, "_load_sites", lambda include_nsfw=False, **_: [custom, GOOD])
     monkeypatch.setattr(selftest, "_load_wmn_sites", lambda: [{"name": "gitlab", "known": ["skennedy"]}])
 
     sites = {s["name"]: s for s in selftest.select_sites(names={"gitlab"})}

@@ -84,7 +84,8 @@ def build_health_alert(
     - Newly broken: a site that was not false_positive/false_negative last run
       and now is (a site seen for the first time is not "new breakage").
     - Exit burned: the count of `blocked` sites rose sharply, which usually means
-      the egress IP lost reputation, not that sites changed.
+      the egress IP lost reputation, not that sites changed. Sites tested for
+      the first time (a new source, a database refresh) don't count.
     `previous` and `current` are selftest summaries ({status: count}); with no
     previous run there is nothing to compare, so no alert.
     """
@@ -92,7 +93,8 @@ def build_health_alert(
         return None
     broken = [c for c in changes if c.get("from") and c["to"] in BROKEN and c["from"] not in BROKEN]
     before = (previous or {}).get("blocked", 0)
-    after = (current or {}).get("blocked", 0)
+    first_seen_blocked = sum(1 for c in changes if not c.get("from") and c["to"] == "blocked")
+    after = (current or {}).get("blocked", 0) - first_seen_blocked
     jumped = after - before >= max(BLOCKED_JUMP_MIN, before // 5)
     if not broken and not jumped:
         return None

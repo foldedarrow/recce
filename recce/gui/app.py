@@ -197,10 +197,12 @@ with st.sidebar:
     ).strip()
 
     runtime_panel.caption(
-        f"{n_default} sites loaded, {n_nsfw} NSFW gated. Categories: "
+        f"{n_default} sites loaded (Maigret's only once selftest verifies them), "
+        f"{n_nsfw} NSFW gated. Categories: "
         + ", ".join(f"{k} ({v})" for k, v in category_counts(include_nsfw=False).items())
     )
-    if runtime_panel.button("Refresh WMN data", icon=":material/sync:", use_container_width=True):
+    if runtime_panel.button("Refresh site data", icon=":material/sync:", use_container_width=True):
+        from recce.modules.maigret import refresh_data as refresh_maigret_data
         from recce.modules.username import refresh_wmn_data
 
         async def _refresh():
@@ -209,12 +211,15 @@ with st.sidebar:
                 timeout=30.0,
                 max_concurrency=2,
             ) as client:
-                return await refresh_wmn_data(client)
+                return await refresh_wmn_data(client), await refresh_maigret_data(client)
 
-        with runtime_panel, st.spinner("Fetching latest from WhatsMyName…"):
+        with runtime_panel, st.spinner("Fetching latest from WhatsMyName and Maigret…"):
             try:
-                before, after = asyncio.run(_refresh())
-                st.success(f"WMN refreshed: {before} → {after}")
+                (wmn_before, wmn_after), (m_before, m_after) = asyncio.run(_refresh())
+                st.success(
+                    f"WMN {wmn_before} → {wmn_after}; Maigret {m_before} → {m_after} "
+                    "(used once `recce selftest` verifies them)"
+                )
                 st.rerun()
             except Exception as e:
                 st.error(f"Update failed: {e}")

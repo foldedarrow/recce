@@ -9,6 +9,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Maigret sites.** [Maigret](https://github.com/soxoj/maigret)'s site database
+  (MIT, bundled as `recce/data/maigret-data.json.xz` with its licence) is a
+  third username source: ~6,800 sites WMN and the custom list don't cover,
+  de-duplicated by normalised domain. Its `status_code`, `message` and
+  `response_url` checks run with Maigret's own rules. Each site stays off until
+  `recce selftest` finds its known account and not a made-up one; searches run
+  only those (`--maigret verified|all|off`, `RECCE_MAIGRET`). `recce update`
+  refreshes it (`--only maigret`), `recce selftest --source maigret` tests just
+  those sites, and `doctor` shows verdicts per source. The selftest "exit
+  walled more" alert no longer counts sites tested for the first time.
+
 - **Phone web search provider** (Pro): with `BRAVE_API_KEY` or `SERPAPI_API_KEY`,
   `recce phone` runs three searches (plain, social/classified sites,
   spam-reputation sites) over every format of the number and lists the pages
@@ -207,6 +218,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Username probes with a browser fingerprint (curl_cffi) ran at most 10 at a
+  time whatever `RECCE_CONCURRENCY` said (curl_cffi's default `max_clients`);
+  they now use the configured concurrency. A page whose bytes don't match its
+  declared charset is decoded leniently instead of aborting the search, and
+  one unexpected error in a probe no longer sinks the whole search or selftest.
 - Phone lookups crashed the GUI (`AttributeError: 'str' object has no attribute
   'get'`), and could crash the CLI clusters panel and the HTML dossier: Ofcom
   hits stored their licence credit under `extra["attribution"]`, the key that
