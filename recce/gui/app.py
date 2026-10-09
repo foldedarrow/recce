@@ -224,7 +224,7 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Update failed: {e}")
 
-    theme.foot("Authorised, lawful investigations only")
+    theme.foot("Authorised, lawful investigations only", st.context.headers.get("X-Gate-User"))
 
 
 # ---------------------------------------------------------------------------

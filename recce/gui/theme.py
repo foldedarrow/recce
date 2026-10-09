@@ -103,6 +103,8 @@ CSS = """
   padding: 14px 10px 6px; }
 .r-foot { color: var(--faint); font-size: 11px; padding: 12px 6px 0; margin-top: 10px;
   border-top: 1px solid var(--line); }
+.r-foot .signout { display: block; margin-top: 6px; color: var(--muted); }
+.r-foot .signout:hover { color: var(--accent-2); }
 
 /* the Mode radio, drawn as vantage's nav list (group labels hang off item 2 and 6) */
 .st-key-mode [role="radiogroup"] { gap: 1px; padding-top: 2px; }
@@ -288,8 +290,16 @@ def group(label: str) -> None:
     html(f'<div class="r-group">{escape(label)}</div>')
 
 
-def foot(text: str) -> None:
-    html(f'<div class="r-foot">{escape(text)}</div>')
+def foot(text: str, gate_user: str | None = None) -> None:
+    """Sidebar footer; with `gate_user`, a sign-out link for the login page in front of
+    the deployed GUI (vantage's gate/, which sets X-Gate-User via Caddy)."""
+    out = ""
+    if gate_user:
+        out = (
+            f'<a class="signout" href="/_gate/logout" target="_self" title="Signed in as {_t(gate_user)}">'
+            "Sign out</a>"
+        )
+    html(f'<div class="r-foot">{escape(text)}{out}</div>')
 
 
 def chip(label: str, value: str = "", tone: Tone = "", title: str = "") -> str:
