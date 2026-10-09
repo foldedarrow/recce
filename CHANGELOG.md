@@ -171,6 +171,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **GUI look matches vantage.** The Streamlit GUI uses vantage's dark "Gotham"
+  console theme: the same colour tokens, a nav rail with Search/System groups,
+  a topbar with status chips (active case — amber when runs aren't being saved —
+  exit, fallback, keys, Pro), uppercase section labels, mono inputs, and result
+  cards for confirmed hits and clusters. Runtime settings fold into a sidebar
+  panel. `recce-gui` passes the matching `--theme.*` flags (your own flags still
+  win). Needs Streamlit 1.40 or newer.
 - **Deep email now runs on user-scanner** (roadmap #6): `recce email --deep`
   probes 99 audited modules of [user-scanner](https://github.com/kaifcodec/user-scanner)
   1.5.2.1 plus the 18 holehe modules for sites user-scanner lacks (117 probes,

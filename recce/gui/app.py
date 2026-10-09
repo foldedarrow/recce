@@ -22,6 +22,7 @@ from recce.core.http import http_client
 from recce.core.investigations import InvestigationStore, delete_confirmation_matches
 from recce.core.output import fallback_note
 from recce.core.result import Report, Status
+from recce.gui import theme
 from recce.licensing import has_pro_entitlement, pro_licence_path, write_pro_licence
 from recce.modules.attribution import cluster_attribution, uncorroborated_accounts
 from recce.modules.domain import search_domain
@@ -43,9 +44,19 @@ from recce.providers import append_registry_gate_hits, provider_status_rows
 # Page
 # ---------------------------------------------------------------------------
 
+MODE_ICONS = {
+    "Investigations": "folder_open",
+    "Username": "alternate_email",
+    "Email": "mail",
+    "Phone": "call",
+    "Domain": "language",
+    "API Keys": "key",
+}
+MODE_GROUP = {"Investigations": "Cases", "API Keys": "System"}
+
 st.set_page_config(
     page_title="recce",
-    page_icon="🔍",
+    page_icon=":material/radar:",
     layout="wide",
     menu_items={
         "Get help": "https://github.com/foldedarrow/recce",
@@ -53,16 +64,7 @@ st.set_page_config(
     },
 )
 
-# Reduce Streamlit chrome a touch — chunky on small windows.
-st.markdown(
-    """
-    <style>
-    .block-container {padding-top: 1.5rem; padding-bottom: 2rem;}
-    [data-testid="stSidebar"] {min-width: 240px; max-width: 280px;}
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+theme.apply()
 
 settings = Settings.load()
 
@@ -80,20 +82,20 @@ store = _investigation_store()
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.markdown("# 🔍 **recce**")
-    st.caption(f"v{__version__} — personal OSINT")
-    st.divider()
+    theme.brand(__version__)
 
+    # Order matters: theme.CSS hangs the "Search" and "System" group labels
+    # off the 2nd and 6th items.
     mode = st.radio(
         "Mode",
-        ["Investigations", "API Keys", "Username", "Email", "Phone", "Domain"],
+        list(MODE_ICONS),
+        format_func=lambda m: f":material/{MODE_ICONS[m]}: {m}",
         horizontal=False,
         label_visibility="collapsed",
         key="mode",
     )
 
-    st.divider()
-    st.caption("Investigation")
+    theme.group("Case")
     case_filter_label = st.selectbox(
         "Case filter",
         ["Active only", "Active + closed", "All"],
@@ -155,59 +157,50 @@ with st.sidebar:
             except ValueError as e:
                 st.error(str(e))
 
-    st.divider()
-    st.caption("API keys")
     rows = provider_status_rows(settings)
     active_count = len([row for row in rows if row["status"] == "active"])
     gated_count = len([row for row in rows if row["status"] == "inactive_pro"])
-    st.markdown(f"**{active_count}** active · **{gated_count}** Pro gated")
-    if st.button("Manage API keys", use_container_width=True):
-        st.session_state["mode"] = "API Keys"
-        st.rerun()
-
-    st.divider()
-    st.caption("Sites")
     n_default = site_count(include_nsfw=False)
     n_nsfw = site_count(include_nsfw=True) - n_default
-    st.markdown(f"**{n_default}** loaded · **{n_nsfw}** NSFW gated")
-    with st.expander("Categories", expanded=False):
-        counts = category_counts(include_nsfw=False)
-        st.caption(", ".join(f"{k} ({v})" for k, v in counts.items()))
 
-    st.divider()
-    st.caption("Runtime")
-    runtime_timeout = st.number_input(
+    theme.group("Runtime")
+    runtime_panel = st.expander("Network & limits", expanded=False)
+    runtime_timeout = runtime_panel.number_input(
         "Timeout (seconds)", min_value=3.0, max_value=60.0, value=float(settings.timeout), step=1.0
     )
-    runtime_concurrency = st.number_input(
+    runtime_concurrency = runtime_panel.number_input(
         "Request concurrency",
         min_value=1,
         max_value=100,
         value=int(settings.max_concurrency),
         step=1,
     )
-    runtime_per_domain_rate = st.number_input(
+    runtime_per_domain_rate = runtime_panel.number_input(
         "Username domain rate",
         min_value=0.0,
         max_value=10.0,
         value=float(DEFAULT_PER_DOMAIN_RATE),
         step=0.5,
     )
-    runtime_proxy = st.text_input(
+    runtime_proxy = runtime_panel.text_input(
         "Exit (proxy)",
         placeholder=f"configured: {resolve_exit('username').label}",
         help="Proxy URL (socks5h://, http://), an exit name from RECCE_EXITS, or 'direct'. "
         "Blank uses each mode's configured exit (RECCE_<MODE>_PROXY, then RECCE_PROXY).",
     ).strip()
     configured_fallback = resolve_fallback()
-    runtime_fallback = st.text_input(
+    runtime_fallback = runtime_panel.text_input(
         "Username fallback exit",
         placeholder=f"configured: {configured_fallback.label}" if configured_fallback else "e.g. tor or tor,home",
         help="Username probes bot-walled on the main exit (HTTP 401/403/429) are retried "
         "through this exit. Blank uses RECCE_USERNAME_FALLBACK_PROXY.",
     ).strip()
 
-    if st.button("Refresh WMN data", use_container_width=True):
+    runtime_panel.caption(
+        f"{n_default} sites loaded, {n_nsfw} NSFW gated. Categories: "
+        + ", ".join(f"{k} ({v})" for k, v in category_counts(include_nsfw=False).items())
+    )
+    if runtime_panel.button("Refresh WMN data", icon=":material/sync:", use_container_width=True):
         from recce.modules.username import refresh_wmn_data
 
         async def _refresh():
@@ -218,7 +211,7 @@ with st.sidebar:
             ) as client:
                 return await refresh_wmn_data(client)
 
-        with st.spinner("Fetching latest from WhatsMyName…"):
+        with runtime_panel, st.spinner("Fetching latest from WhatsMyName…"):
             try:
                 before, after = asyncio.run(_refresh())
                 st.success(f"WMN refreshed: {before} → {after}")
@@ -226,18 +219,26 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Update failed: {e}")
 
+    theme.foot("Authorised, lawful investigations only")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-STATUS_GLYPH = {
-    Status.FOUND: "✅",
-    Status.NOT_FOUND: "·",
-    Status.UNKNOWN: "❔",
-    Status.SKIPPED: "⏸️",
-    Status.ERROR: "❌",
+# Status text colours in result tables (vantage's semantic palette).
+STATUS_COLOUR = {
+    Status.FOUND.value: "#3fb37f",
+    Status.NOT_FOUND.value: "#45505b",
+    Status.UNKNOWN.value: "#d6a531",
+    Status.SKIPPED.value: "#64727f",
+    Status.ERROR.value: "#e5484d",
 }
+
+
+def _status_style(value: Any) -> str:
+    colour = STATUS_COLOUR.get(str(value))
+    return f"color: {colour}" if colour else ""
 
 
 def _cluster_label(hit: Any) -> str:
@@ -252,30 +253,31 @@ def _cluster_label(hit: Any) -> str:
 def render_clusters(report: Report) -> None:
     if not report.clusters:
         return
-    st.subheader("Likely the same person")
+    theme.section("Likely the same person", len(report.clusters))
     st.caption(
         "Hits linked by corroborating public data: same profile, cross-links, "
         "shared email, same avatar, same display name or location. A shared "
         "username alone is not evidence of one owner."
     )
+    cards = []
     for cluster in report.clusters:
-        with st.container(border=True):
-            st.markdown(
-                f"**Cluster {cluster.id}** · {len(cluster.members)} profiles · "
-                f"confidence **{cluster.confidence:.2f}**  \n"
-                + ", ".join(
-                    f"[{m.source}]({m.url})" if m.url else m.source for m in cluster.members
-                )
+        signals = list(cluster.signals)
+        if cluster.timeline:
+            signals.append(
+                "Timeline: "
+                + " → ".join(f"{m.source} {m.created_at[:10]}" for m in cluster.timeline if m.created_at)
             )
-            for signal in cluster.signals:
-                st.caption(signal)
-            if cluster.timeline:
-                st.caption(
-                    "Timeline: "
-                    + " → ".join(
-                        f"{m.source} {m.created_at[:10]}" for m in cluster.timeline if m.created_at
-                    )
-                )
+        cards.append(theme.card(
+            f"Cluster {cluster.id}",
+            pills=[
+                theme.pill(f"{len(cluster.members)} profiles"),
+                theme.pill(f"confidence {cluster.confidence:.2f}", "accent"),
+            ],
+            body=", ".join(m.source for m in cluster.members),
+            signals=signals,
+            accent=True,
+        ))
+    theme.html("".join(cards))
     alone = uncorroborated_accounts(report)
     if alone:
         st.caption(f"{alone} other account(s) match on the username only.")
@@ -286,7 +288,6 @@ def report_to_df(report: Report) -> pd.DataFrame:
     for h in report.hits:
         rows.append(
             {
-                "": STATUS_GLYPH.get(h.status, ""),
                 "Source": h.source,
                 "Category": h.category,
                 "Status": h.status.value,
@@ -447,7 +448,7 @@ def render_pivot_suggestions(report: Report) -> None:
     pivots = [p for p in extract_pivots(report, depth=depth) if p.key not in searched]
     if not pivots:
         return
-    st.subheader("Follow-up searches")
+    theme.section("Follow-up searches", len(pivots))
     st.caption(
         "Identifiers named in these hits. Follow-ups are passive lookups only; "
         "deep mode never runs on a discovered identifier. Saved runs record which "
@@ -456,7 +457,8 @@ def render_pivot_suggestions(report: Report) -> None:
     for i, p in enumerate(pivots):
         cols = st.columns([4, 6])
         cols[0].button(
-            f"🔎 {p.kind}: {p.value}",
+            f"{p.kind}: {p.value}",
+            icon=":material/travel_explore:",
             key=f"pivot-{report.query_type}-{report.query}-{i}",
             on_click=_queue_pivot,
             args=(p,),
@@ -478,24 +480,21 @@ def render_results(report: Report, *, show_misses: bool, show_errors: bool) -> N
     c3.metric("Errors", len(errors))
     c4.metric("Elapsed", _elapsed_str(report))
     if report.exit:
-        st.caption(f"Exit: {report.exit}{fallback_note(report)}")
+        theme.meta([("exit", f"{report.exit}{fallback_note(report)}")])
 
     render_clusters(report)
 
     if found:
-        st.subheader("Confirmed hits")
+        theme.section("Confirmed hits", len(found))
+        cards = []
         for h in found:
-            with st.container(border=True):
-                cols = st.columns([3, 7])
-                cluster = _cluster_label(h)
-                badge = f"  \n`cluster {cluster}`" if cluster.startswith("#") else ""
-                cols[0].markdown(f"**{h.source}**  \n_{h.category}_{badge}")
-                detail = ""
-                if h.url:
-                    detail += f"[{h.url}]({h.url})  \n"
-                if h.summary:
-                    detail += h.summary
-                cols[1].markdown(detail or "_(no detail)_")
+            cluster = _cluster_label(h)
+            pills = [theme.pill(h.category)] if h.category else []
+            if cluster.startswith("#"):
+                pills.append(theme.pill(f"cluster {cluster}", "accent"))
+            pills.append(theme.pill(f"{h.confidence:.2f}", "ok" if h.confidence >= 0.8 else ""))
+            cards.append(theme.card(h.source, pills=pills, url=h.url, body=h.summary or "(no detail)"))
+        theme.html("".join(cards))
     else:
         st.info("No confirmed hits. Try toggling 'Show misses' or 'Show errors' below for the full audit.")
 
@@ -506,9 +505,9 @@ def render_results(report: Report, *, show_misses: bool, show_errors: bool) -> N
         df = df[df["Status"] != Status.ERROR.value]
 
     if not df.empty:
-        st.subheader("All results")
+        theme.section("All results", len(df))
         st.dataframe(
-            df,
+            df.style.map(_status_style, subset=["Status"]),
             column_config={
                 "URL": st.column_config.LinkColumn(
                     "URL", display_text=r"open ↗"
@@ -531,15 +530,20 @@ def render_results(report: Report, *, show_misses: bool, show_errors: bool) -> N
     base = f"recce-{report.query_type}-{safe}-{ts}"
 
     dc1, dc2 = st.columns(2)
-    dc1.download_button("⬇️ CSV", csv, file_name=f"{base}.csv", mime="text/csv", use_container_width=True)
-    dc2.download_button("⬇️ JSON", js, file_name=f"{base}.json", mime="application/json", use_container_width=True)
+    dc1.download_button(
+        "CSV", csv, file_name=f"{base}.csv", mime="text/csv", icon=":material/download:", use_container_width=True
+    )
+    dc2.download_button(
+        "JSON", js, file_name=f"{base}.json", mime="application/json", icon=":material/download:",
+        use_container_width=True,
+    )
 
 
 def render_domain_summary(report: Report) -> None:
     rows = build_domain_summary(report)
     if not rows:
         return
-    st.subheader("Summary")
+    theme.section("Summary")
     st.dataframe(
         pd.DataFrame([{"Field": row.label, "Value": row.value} for row in rows]),
         hide_index=True,
@@ -578,13 +582,14 @@ def _csv_bytes(report: Report) -> bytes:
 # ---------------------------------------------------------------------------
 
 def _investigations_mode() -> None:
-    st.markdown("## Investigations")
-    st.caption("Local case workspace for saved runs, evidence, audit history, and redacted exports.")
+    theme.page_header(
+        "Investigations",
+        "Local case workspace for saved runs, evidence, audit history, and redacted exports.",
+    )
     st.info(
         "Recce Pro stores investigation data locally at "
         f"`{store.db_path}`. This file is not encrypted at the application layer. "
         "Use full-disk encryption (BitLocker / FileVault / LUKS) on the host machine.",
-        icon="ℹ️",
     )
 
     inv = active_investigation()
@@ -602,7 +607,7 @@ def _investigations_mode() -> None:
     c3.metric("Classification", inv["classification"])
     c4.metric("Status", inv["status"])
 
-    st.subheader(inv["name"])
+    theme.section(inv["name"])
     meta_cols = st.columns([2, 2, 3])
     meta_cols[0].markdown(f"**Case ref**  \n{inv['case_ref'] or '-'}")
     meta_cols[1].markdown(f"**Created**  \n{inv['created_at']}")
@@ -662,7 +667,7 @@ def _investigations_mode() -> None:
                 st.rerun()
 
     export_base = "".join(c if c.isalnum() else "-" for c in inv["name"].lower())[:40]
-    st.subheader("Exports")
+    theme.section("Exports")
     h1, h2 = st.columns(2)
     h1.download_button(
         "HTML dossier",
@@ -738,13 +743,13 @@ def _investigations_mode() -> None:
                 "Version": run["recce_version"],
             }
         )
-    st.subheader("Run history")
+    theme.section("Run history")
     if run_rows:
         st.dataframe(pd.DataFrame(run_rows), hide_index=True, use_container_width=True)
     else:
         st.info("No runs recorded yet. Use Username, Email, or Phone while this case is active.")
 
-    st.subheader("Run comparison")
+    theme.section("Run comparison")
     latest_by_query: dict[tuple[str, str], dict[str, Any]] = {}
     for run in runs:
         latest_by_query.setdefault((run["query_type"], run["query"]), run)
@@ -811,8 +816,10 @@ def _investigations_mode() -> None:
 
 
 def _api_keys_mode() -> None:
-    st.markdown("## API Keys")
-    st.caption("Manage optional provider keys stored locally for this user account.")
+    theme.page_header(
+        "API Keys",
+        "Manage optional provider keys stored locally for this user account.",
+    )
 
     rows = provider_status_rows(settings)
     status_df = pd.DataFrame(
@@ -850,7 +857,7 @@ def _api_keys_mode() -> None:
     ]
 
     with st.form("api_keys_form"):
-        st.subheader("Provider credentials")
+        theme.section("Provider credentials")
         updates: dict[str, str] = {}
         for env_key, label, current in fields:
             updates[env_key] = st.text_input(
@@ -860,7 +867,7 @@ def _api_keys_mode() -> None:
                 key=f"api_key_{env_key}",
             ).strip()
 
-        st.subheader("Recce Pro entitlement")
+        theme.section("Recce Pro entitlement")
         licence_value = st.text_input(
             "Licence token",
             value="",
@@ -890,8 +897,10 @@ def _api_keys_mode() -> None:
 
 
 def _username_mode() -> None:
-    st.markdown("## Username search")
-    st.caption("Hunt a username across hundreds of platforms in parallel.")
+    theme.page_header(
+        "Username search",
+        "Hunt a username across hundreds of platforms in parallel.",
+    )
 
     with st.form("u_form"):
         target = st.text_input("Username", placeholder="e.g. foldedarrow", key="u_target")
@@ -974,8 +983,10 @@ def _username_mode() -> None:
 
 
 def _email_mode() -> None:
-    st.markdown("## Email lookup")
-    st.caption("Gravatar, MX provider, breach data, optional deep account discovery.")
+    theme.page_header(
+        "Email lookup",
+        "Gravatar, MX provider, breach data, optional deep account discovery.",
+    )
 
     with st.form("e_form"):
         target = st.text_input("Email", placeholder="someone@example.com", key="e_target")
@@ -1075,8 +1086,10 @@ def _email_mode() -> None:
 
 
 def _phone_mode() -> None:
-    st.markdown("## Phone lookup")
-    st.caption("Parse, classify, emit clickable manual-pivot links, and (deep mode) build a passive search-engine footprint.")
+    theme.page_header(
+        "Phone lookup",
+        "Parse, classify, emit clickable manual-pivot links, and (deep mode) build a passive search-engine footprint.",
+    )
 
     regions = ["GB", "US", "IE", "FR", "DE", "ES", "IT", "NL", "AU", "CA", "NZ", "JP"]
     with st.form("p_form"):
@@ -1165,8 +1178,10 @@ def _phone_mode() -> None:
 
 
 def _domain_mode() -> None:
-    st.markdown("## Domain profile")
-    st.caption("Ownership, DNS, email infrastructure, web surface, passive subdomains, and company pivots.")
+    theme.page_header(
+        "Domain profile",
+        "Ownership, DNS, email infrastructure, web surface, passive subdomains, and company pivots.",
+    )
 
     with st.form("d_form"):
         target = st.text_input("Domain or URL", placeholder="example.com or https://www.example.com", key="d_target")
@@ -1270,6 +1285,32 @@ def _domain_mode() -> None:
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
+
+def render_topbar(current: str) -> None:
+    """vantage-style topbar: where you are, then what this run will use."""
+    module = current.lower() if current in ("Username", "Email", "Phone", "Domain") else "username"
+    inv = active_investigation()
+    chips = [
+        theme.chip("case", inv["name"], "ok", title=f"Runs are saved to {inv['name']}")
+        if inv
+        else theme.chip("case", "none", "warn", title="No active case: runs are not saved"),
+        theme.chip("exit", _gui_exit(module).label, "accent", title=f"{module} traffic leaves via this exit"),
+    ]
+    fallback = _gui_fallback_label()
+    if fallback and module == "username":
+        chips.append(theme.chip("fallback", fallback, title="Bot-walled username probes retry through"))
+    chips.append(
+        theme.chip(
+            "keys", f"{active_count} active", "ok" if active_count else "",
+            title=f"{active_count} providers active, {gated_count} Pro gated",
+        )
+    )
+    chips.append(theme.chip("pro", "on" if has_pro_entitlement() else "off", "ok" if has_pro_entitlement() else ""))
+    group = MODE_GROUP.get(current, "Search")
+    theme.topbar([group, current] if group != current else [current], chips)
+
+
+render_topbar(mode)
 
 if mode == "Investigations":
     _investigations_mode()

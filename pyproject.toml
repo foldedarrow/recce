@@ -49,7 +49,7 @@ dev = [
     "ruff>=0.4",
 ]
 gui = [
-    "streamlit>=1.36",
+    "streamlit>=1.40",
     "pandas>=2.0",
 ]
 
