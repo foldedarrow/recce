@@ -16,7 +16,8 @@ Environment=COLUMNS=160
 EnvironmentFile=-/etc/recce/web.env
 ExecStart=/opt/recce/.venv/bin/recce selftest
 Nice=10
-TimeoutStartSec=1h
+# WMN + custom take ~5 min, the ~6,800 Maigret sites ~45 min more (2026-10-09).
+TimeoutStartSec=3h
 UMask=0077
 NoNewPrivileges=yes
 PrivateTmp=yes

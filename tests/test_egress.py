@@ -295,6 +295,11 @@ def test_impersonating_client_forces_ipv4_resolution(monkeypatch) -> None:  # ty
     seen.clear()
     ImpersonatingClient(proxy="socks5://127.0.0.1:1080")
     assert seen["curl_options"] is None
+    # curl_cffi's own cap (10 transfers) must not undercut the configured concurrency.
+    assert seen["max_clients"] == 30
+    seen.clear()
+    ImpersonatingClient(max_concurrency=90)
+    assert seen["max_clients"] == 90
 
 
 # --- per-site exit preferences (selftest-learned) -----------------------------------

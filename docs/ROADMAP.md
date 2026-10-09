@@ -76,8 +76,20 @@ not yet a link signal; only corroborating profile data is.
   which usually means the exit IP lost reputation. `error`/`blocked` flips
   alone never alert (they flap with the IP). `--no-notify` turns it off.
 - Next: more `known` accounts for WMN sites whose only one has gone.
-- Consider importing Maigret's site DB (MIT) as a third source — ~3,000 sites
-  vs WMN's ~700 — gated behind the same canary verification.
+- Shipped: Maigret's site DB (MIT, `recce/modules/maigret.py`) as a third
+  source. Its data.json now holds 8,077 entries; 7,237 translate faithfully
+  (left out: 698 disabled, numeric-ID and Tor/I2P/DNS checks, POST and
+  session-token checks, similar-name searches, regexes a canary can't pass)
+  and 6,809 remain after de-duplicating against WMN/custom by normalised
+  domain. Every one is off until `recce selftest` verifies it; `recce update`
+  refreshes it like WMN. First selftest, 2026-10-09 via Proton (46.29.25.84),
+  42 min: **5,637 healthy** (2,746 of them forums, 944 coding), 33 false
+  positive, 371 false negative, 264 blocked (47 of those healthy through a
+  fallback exit: home 31, Tor 16), 503 error (140 DNS refused by Pi-hole, 121
+  timeouts, 91 TLS, 60 resets, the rest 5xx), 1 with no known account. So
+  5,684 sites (84%) are usable and searches run exactly those
+  (`--maigret verified`, the default).
+  MAIGRET_TIMING
 
 ### 5. Egress control — shipped
 `recce/core/egress.py`: named exits, per-module exit selection, a username
