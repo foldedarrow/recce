@@ -37,3 +37,12 @@ def test_theme_flags_pair_up() -> None:
     flags = theme.THEME_FLAGS
     assert len(flags) % 2 == 0
     assert all(flag.startswith("--theme.") for flag in flags[::2])
+
+
+def test_foot_sign_out_link_only_behind_the_gate(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    seen: list[str] = []
+    monkeypatch.setattr(theme, "html", seen.append)
+    theme.foot("lawful use only")
+    theme.foot("lawful use only", 'kieran"><b>')
+    assert "/_gate/logout" not in seen[0]
+    assert 'href="/_gate/logout"' in seen[1] and '"><b>' not in seen[1]
