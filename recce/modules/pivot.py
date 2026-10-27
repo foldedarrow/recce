@@ -136,8 +136,11 @@ def username_from_url(url: Any) -> str | None:
     """Extract the username from a profile URL on a known host."""
     if not isinstance(url, str) or not url.strip():
         return None
-    parsed = urlparse(url.strip() if "://" in url else f"https://{url.strip()}")
-    host = (parsed.hostname or "").lower()
+    try:
+        parsed = urlparse(url.strip() if "://" in url else f"https://{url.strip()}")
+        host = (parsed.hostname or "").lower()
+    except ValueError:  # bracketed netloc that isn't IPv6, e.g. a redacted host
+        return None
     for prefix in ("www.", "m.", "mobile."):
         host = host.removeprefix(prefix)
     prefix = _PROFILE_HOSTS.get(host)

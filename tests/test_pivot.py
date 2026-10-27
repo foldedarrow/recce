@@ -83,6 +83,7 @@ def test_normalise_rejects_unsearchable_identifiers() -> None:
         ("https://twitter.com/intent/tweet", None),
         ("https://linkedin.com/company/acme", None),
         ("https://blog.example.test/about", None),
+        ("https://www.[REDACTED:6f1a1de526f2]/", None),
         ("", None),
         (None, None),
     ],

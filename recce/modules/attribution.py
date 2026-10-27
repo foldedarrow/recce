@@ -172,8 +172,11 @@ def url_key(url: Any) -> tuple[str, str] | None:
     if not isinstance(url, str) or not url.strip():
         return None
     raw = url.strip()
-    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
-    host = (parsed.hostname or "").lower()
+    try:
+        parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+        host = (parsed.hostname or "").lower()
+    except ValueError:  # e.g. a redacted host, "https://www.[REDACTED:…]/", reads as bad IPv6
+        return None
     for prefix in ("www.", "m.", "mobile."):
         host = host.removeprefix(prefix)
     host = _HOST_ALIASES.get(host, host)
