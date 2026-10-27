@@ -93,6 +93,11 @@ def test_url_key_keeps_different_accounts_apart() -> None:
     assert url_key(None) is None
 
 
+def test_url_key_skips_urls_urlparse_rejects() -> None:
+    # A redacted dossier masks hosts as "[REDACTED:…]", which urlparse reads as bad IPv6.
+    assert url_key("https://www.[REDACTED:6f1a1de526f2]/") is None
+
+
 def test_avatar_hash_survives_resizing_and_recompression() -> None:
     original = avatar_hash(_image("circle", 128))
     resized = avatar_hash(_image("circle", 460, "JPEG"))
@@ -367,6 +372,14 @@ def test_merge_ignores_unrelated_searches_and_in_report_clusters() -> None:
         _profile("X", "https://x.com/alice"),
     )
     assert merge_reports([one, b]) == []
+
+
+def test_merge_tolerates_a_redacted_url() -> None:
+    from recce.modules.attribution import merge_reports
+
+    a = _search("alice", _site("Site", "https://www.[REDACTED:6f1a1de526f2]/"))
+    b = _search("bob", _site("Reddit", "https://reddit.com/user/bob"))
+    assert merge_reports([a, b]) == []
 
 
 def test_merge_counts_the_same_account_found_by_two_searches_once() -> None:
